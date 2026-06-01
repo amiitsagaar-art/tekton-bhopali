@@ -1,0 +1,29 @@
+{
+    "project_info": {
+        "project_number": "699169321006",
+        "project_id": "tekton-bhopal",
+        "storage_bucket": "tekton-bhopal.firebasestorage.app"
+    },
+    "client": [
+        {
+            "client_info": {
+                "mobilesdk_app_id": "1:699169321006:android:7cad059506d9f9700d6fbf",
+                "android_client_info": {
+                    "package_name": "com.tektonbhopal.app"
+                }
+            },
+            "oauth_client": [],
+            "api_key": [
+                {
+                    "current_key": "AIzaSyCWnkW6REfB_LORvprxxlUW61NE_n9Fz4Y"
+                }
+            ],
+            "services": {
+                "appinvite_service": {
+                    "other_platform_oauth_client": []
+                }
+            }
+        }
+    ],
+    "configuration_version": "1"
+}

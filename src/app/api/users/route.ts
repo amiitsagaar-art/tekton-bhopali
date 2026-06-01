@@ -1,0 +1,100 @@
+import { NextResponse } from "next/server";
+import { db } from "@/db";
+import { users } from "@/db/schema";
+import { eq, desc } from "drizzle-orm";
+
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const phone = searchParams.get("phone");
+
+    if (!phone) {
+      // Fetch all users strictly from database
+      const allUsers = await db
+        .select()
+        .from(users)
+        .orderBy(desc(users.createdAt));
+      return NextResponse.json(allUsers);
+    }
+
+    const result = await db
+      .select()
+      .from(users)
+      .where(eq(users.phone, phone))
+      .limit(1);
+
+    if (result && result.length > 0) {
+      return NextResponse.json({ exists: true, user: result[0] });
+    } else {
+      return NextResponse.json({ exists: false, error: "User not found" }, { status: 404 });
+    }
+  } catch (error: any) {
+    console.error("[DATABASE ERROR] Querying users failed:", error);
+    return NextResponse.json({ error: "Database error: " + error.message }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const { name, phone, email, location } = body;
+
+    if (!name || !phone || !location) {
+      return NextResponse.json({ error: "Missing required fields (name, phone, location)." }, { status: 400 });
+    }
+
+    const cleanedPhone = phone.trim();
+
+    // Check if phone number is already registered
+    const existing = await db
+      .select()
+      .from(users)
+      .where(eq(users.phone, cleanedPhone))
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      return NextResponse.json({ error: "This phone number is already registered. Please Login securely instead!" }, { status: 400 });
+    }
+
+    const userValues = {
+      name: name.trim(),
+      phone: cleanedPhone,
+      email: email ? email.trim() : "",
+      location: location.trim(),
+    };
+
+    // Google Sheets Integration: Forward payload to Google Sheets Apps Script Webhook asynchronously
+    const sheetWebhook = process.env.GOOGLE_SHEETS_WEBHOOK_URL;
+    if (sheetWebhook) {
+      try {
+        const sheetPayload = {
+          ...userValues,
+          type: "user",
+          userName: userValues.name,
+          userPhone: userValues.phone,
+          userEmail: userValues.email,
+          userLocation: userValues.location,
+          createdAt: new Date().toISOString(),
+        };
+
+        fetch(sheetWebhook, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(sheetPayload)
+        }).catch(err => console.error("Google Sheets forward failure (user):", err));
+      } catch (sheetErr) {
+        console.warn("Async user sheet forwarding caught error:", sheetErr);
+      }
+    }
+
+    const inserted = await db
+      .insert(users)
+      .values(userValues)
+      .returning();
+
+    return NextResponse.json({ success: true, user: inserted[0] }, { status: 201 });
+  } catch (error: any) {
+    console.error("[DATABASE ERROR] Registering user failed:", error);
+    return NextResponse.json({ error: "Database error: " + error.message }, { status: 500 });
+  }
+}
