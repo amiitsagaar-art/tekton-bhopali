@@ -49,3 +49,5 @@ tekton-deploy.html
 run_website.bat
 debug_run.bat
 git_push_output.log
+
+.vercel
