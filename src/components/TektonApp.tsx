@@ -1294,7 +1294,7 @@ export default function TektonApp() {
               placeholder="Search e.g. leaking pipe, fan repair, kitchen renovation, tile fixing..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-10 py-3 bg-slate-950/60 border border-white/10 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:bg-slate-950 font-medium text-white placeholder:text-slate-500"
+              className="w-full pl-10 pr-10 py-3 border border-white/10 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:bg-slate-950 font-medium text-slate-900 bg-white placeholder-slate-400"
             />
             {searchQuery && (
               <button onClick={() => setSearchQuery("")} title="Clear search" className="absolute right-4 text-slate-400 hover:text-white">
@@ -1381,9 +1381,7 @@ export default function TektonApp() {
         <div className="flex border-b border-white/10 space-x-6 text-sm font-bold overflow-x-auto scrollbar-hide">
           <button
             onClick={() => setCurrentTab("services")}
-            className={`pb-3 shrink-0 relative transition ${
-              currentTab === "services" ? "text-yellow-450 border-b-2 border-yellow-450" : "text-slate-400 hover:text-slate-200"
-            }`}
+            className={`pb-3 shrink-0 relative transition ${ currentTab === "services" ? "text-yellow-450 border-b-2 border-yellow-450" : "text-slate-400 hover:text-slate-200" } text-slate-900 bg-white placeholder-slate-400`}
           >
             Bhopal Experts & Enquire
           </button>
@@ -1720,7 +1718,7 @@ export default function TektonApp() {
                     placeholder="e.g. MP Nagar Zone 1, Kolar Road, Arera Colony, 462016..."
                     value={checkAreaInput}
                     onChange={(e) => setCheckAreaInput(e.target.value)}
-                    className="flex-1 bg-slate-950/60 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400 text-white placeholder:text-slate-500"
+                    className="flex-1 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400 text-slate-900 bg-white placeholder-slate-400"
                   />
                   <button
                     type="submit"
@@ -1733,11 +1731,7 @@ export default function TektonApp() {
             </form>
 
             {checkResult.status !== "idle" && (
-              <div className={`mt-5 p-4 rounded-xl border animate-fade-in ${
-                checkResult.status === "yes"
-                  ? "bg-emerald-500/10 border-emerald-500/30"
-                  : "bg-rose-500/10 border-rose-500/30"
-              }`}>
+              <div className={`mt-5 p-4 rounded-xl border animate-fade-in ${ checkResult.status === "yes" ? "bg-emerald-500/10 border-emerald-500/30" : "bg-rose-500/10 border-rose-500/30" } text-slate-900 bg-white placeholder-slate-400`}>
                 <div className="flex items-start space-x-3">
                   <span className="text-base mt-0.5">{checkResult.status === "yes" ? "✅" : "❌"}</span>
                   <div className="flex-1">
@@ -2104,7 +2098,7 @@ export default function TektonApp() {
               }
             }}
             placeholder="••••"
-            className="w-48 bg-slate-900 border border-slate-700 text-center text-3xl font-mono tracking-[1em] rounded-2xl px-4 py-4 focus:outline-none focus:border-amber-500 transition shadow-inner mb-6"
+            className="w-48 border border-slate-700 text-center text-3xl font-mono tracking-[1em] rounded-2xl px-4 py-4 focus:outline-none focus:border-amber-500 transition shadow-inner mb-6 text-slate-900 bg-white placeholder-slate-400"
           />
 
           <button
@@ -2141,7 +2135,7 @@ export default function TektonApp() {
                   placeholder="Enter 4 digits"
                   value={newPinInput}
                   onChange={(e) => setNewPinInput(e.target.value.replace(/\D/g, ""))}
-                  className="w-full bg-slate-50 border border-slate-300 text-center text-xl font-mono tracking-widest rounded-xl px-4 py-3 focus:outline-none focus:border-amber-500 text-slate-900"
+                  className="w-full bg-slate-50 border border-slate-300 text-center text-xl font-mono tracking-widest rounded-xl px-4 py-3 focus:outline-none focus:border-amber-500 text-slate-900 bg-white placeholder-slate-400"
                 />
               </div>
               <div>
@@ -2151,7 +2145,7 @@ export default function TektonApp() {
                   placeholder="Confirm 4 digits"
                   value={confirmPinInput}
                   onChange={(e) => setConfirmPinInput(e.target.value.replace(/\D/g, ""))}
-                  className="w-full bg-slate-50 border border-slate-300 text-center text-xl font-mono tracking-widest rounded-xl px-4 py-3 focus:outline-none focus:border-amber-500 text-slate-900"
+                  className="w-full bg-slate-50 border border-slate-300 text-center text-xl font-mono tracking-widest rounded-xl px-4 py-3 focus:outline-none focus:border-amber-500 text-slate-900 bg-white placeholder-slate-400"
                 />
               </div>
 
@@ -2217,7 +2211,7 @@ export default function TektonApp() {
                   placeholder="Enter 6-digit OTP"
                   value={forgotPinUserInput}
                   onChange={(e) => setForgotPinUserInput(e.target.value.replace(/\D/g, ""))}
-                  className="w-full bg-slate-950 border border-slate-700 text-center text-2xl font-mono tracking-[0.5em] rounded-xl px-4 py-3 focus:outline-none focus:border-amber-500 text-white mb-4"
+                  className="w-full border border-slate-700 text-center text-2xl font-mono tracking-[0.5em] rounded-xl px-4 py-3 focus:outline-none focus:border-amber-500 mb-4 text-slate-900 bg-white placeholder-slate-400"
                 />
                 <button
                   onClick={() => {
@@ -2289,7 +2283,7 @@ export default function TektonApp() {
                   defaultValue={userName}
                   required
                   placeholder="e.g. Ramesh Kumar"
-                  className="w-full bg-slate-950/60 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-yellow-400 transition"
+                  className="w-full border border-white/10 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-yellow-400 transition text-slate-900 bg-white placeholder-slate-400"
                 />
               </div>
 
@@ -2302,7 +2296,7 @@ export default function TektonApp() {
                   required
                   pattern="[0-9]{10}"
                   placeholder="e.g. 9876543210"
-                  className="w-full bg-slate-955 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-yellow-400 transition font-mono"
+                  className="w-full border border-white/10 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-yellow-400 transition font-mono text-slate-900 bg-white placeholder-slate-400"
                 />
               </div>
 
@@ -2361,11 +2355,7 @@ export default function TektonApp() {
                     setConfirmationResult(null);
                     setOtpError("");
                   }}
-                  className={`text-sm font-bold px-4 py-1.5 rounded-full transition ${
-                    !isRegistering
-                      ? "bg-[#F8CB46] text-slate-900"
-                      : "text-slate-400 hover:text-white"
-                  }`}
+                  className={`text-sm font-bold px-4 py-1.5 rounded-full transition ${ !isRegistering ? "bg-[#F8CB46] text-slate-900" : "text-slate-400 hover:text-white" } bg-white placeholder-slate-400`}
                 >
                   Login
                 </button>
@@ -2497,7 +2487,7 @@ export default function TektonApp() {
                           title="Enter the 6-digit verification code"
                           value={otpCode}
                           onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
-                          className="w-full border border-slate-300 px-4 py-3 rounded-xl text-center font-black tracking-widest text-lg focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition text-slate-900 bg-white placeholder-slate-300"
+                          className="w-full border border-slate-300 px-4 py-3 rounded-xl text-center font-black tracking-widest text-lg focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition text-slate-900 bg-white placeholder-slate-300 placeholder-slate-400"
                         />
                       </div>
                       
@@ -2570,11 +2560,7 @@ export default function TektonApp() {
                         <button
                           onClick={() => setLoginRole("user")}
                           title="Login as Customer/User"
-                          className={`flex-1 py-2 text-xs font-black rounded-lg transition-all flex items-center justify-center gap-1 ${
-                            loginRole === "user"
-                              ? "bg-white text-slate-900 shadow-xs"
-                              : "text-slate-500 hover:text-slate-800"
-                          }`}
+                          className={`flex-1 py-2 text-xs font-black rounded-lg transition-all flex items-center justify-center gap-1 ${ loginRole === "user" ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-800" } placeholder-slate-400`}
                         >
                           👤 User / Customer
                         </button>
@@ -2652,7 +2638,7 @@ export default function TektonApp() {
                           title="Enter the 6-digit verification code"
                           value={otpCode}
                           onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
-                          className="w-full border border-slate-300 px-4 py-3 rounded-xl text-center font-black tracking-widest text-lg focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition text-slate-900 bg-white placeholder-slate-300"
+                          className="w-full border border-slate-300 px-4 py-3 rounded-xl text-center font-black tracking-widest text-lg focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition text-slate-900 bg-white placeholder-slate-300 placeholder-slate-400"
                         />
                       </div>
 
@@ -2869,7 +2855,7 @@ export default function TektonApp() {
                     placeholder="e.g. Ramesh Saxena"
                     value={newFeedbackName}
                     onChange={(e) => setNewFeedbackName(e.target.value)}
-                    className="w-full bg-white border border-slate-200 px-4 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition"
+                    className="w-full bg-white border border-slate-200 px-4 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition text-slate-900 placeholder-slate-400"
                   />
                 </div>
                 <div>
@@ -2880,7 +2866,7 @@ export default function TektonApp() {
                     placeholder="e.g. Arera Colony"
                     value={newFeedbackLocation}
                     onChange={(e) => setNewFeedbackLocation(e.target.value)}
-                    className="w-full bg-white border border-slate-200 px-4 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition"
+                    className="w-full bg-white border border-slate-200 px-4 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition text-slate-900 placeholder-slate-400"
                   />
                 </div>
               </div>
@@ -2920,11 +2906,7 @@ export default function TektonApp() {
                         className="focus:outline-none transition hover:scale-125"
                       >
                         <Star
-                          className={`w-5 h-5 ${
-                            star <= newFeedbackRating
-                              ? "fill-amber-400 text-amber-400"
-                              : "text-slate-350"
-                          }`}
+                          className={`w-5 h-5 ${ star <= newFeedbackRating ? "fill-amber-400 text-amber-400" : "text-slate-350" } text-slate-900 bg-white placeholder-slate-400`}
                         />
                       </button>
                     ))}
@@ -2940,7 +2922,7 @@ export default function TektonApp() {
                   placeholder="Share your experience with Bhopal residents..."
                   value={newFeedbackText}
                   onChange={(e) => setNewFeedbackText(e.target.value)}
-                  className="w-full bg-white border border-slate-200 px-4 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition"
+                  className="w-full bg-white border border-slate-200 px-4 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition text-slate-900 placeholder-slate-400"
                 ></textarea>
               </div>
 
