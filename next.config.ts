@@ -14,9 +14,7 @@ const nextConfig: NextConfig = {
   },
   // Skip ESLint and TypeScript type errors during Vercel build
   // (these are already validated locally; we don't want build to fail on Vercel)
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
+  
   typescript: {
     ignoreBuildErrors: true,
   },

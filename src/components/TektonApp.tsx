@@ -8,7 +8,7 @@ import Footer from "@/components/Footer";
 import BookingModal from "@/components/BookingModal";
 import { registerPushNotifications, addPushListeners, removePushListeners } from "@/utils/pushNotifications";
 import { auth } from "@/lib/firebase";
-import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
 import {
   Wrench,
   Hammer,
@@ -248,269 +248,122 @@ export default function TektonApp() {
   const [registerName, setRegisterName] = useState("");
   const [registerPhone, setRegisterPhone] = useState("");
   const [registerEmail, setRegisterEmail] = useState("");
+  const [registerPassword, setRegisterPassword] = useState("");
+  const [loginEmailInput, setLoginEmailInput] = useState("");
+  const [loginPasswordInput, setLoginPasswordInput] = useState("");
   const [registerLocation, setRegisterLocation] = useState("");
   const [loginRole, setLoginRole] = useState<"user" | "vendor">("user");
   const [authLoading, setAuthLoading] = useState(false);
   const [otpError, setOtpError] = useState("");
 
-  const setupRecaptcha = () => {
-    if (typeof window === "undefined") return null;
+
+  const handleFirebaseRegister = async () => {
+    if (registerName.trim().length < 2) { alert("Please enter your full name."); return; }
+    if (!registerEmail.trim() || !registerPassword.trim()) { alert("Email and Password are required."); return; }
+    if (!registerLocation) { alert("Please select your Bhopal zone."); return; }
     
-    // Clear any previous global verifier reference
-    if ((window as any).recaptchaVerifier) {
-      try {
-        (window as any).recaptchaVerifier.clear();
-      } catch (e) {
-        console.warn("Failed to clear previous recaptcha verifier:", e);
-      }
-      (window as any).recaptchaVerifier = null;
-    }
-
-    const parent = document.getElementById("recaptcha-parent");
-    if (!parent) {
-      console.error("recaptcha-parent element not found in DOM!");
-      return null;
-    }
-
-    // Force clear parent HTML and append a new unique child element
-    parent.innerHTML = "";
-    const child = document.createElement("div");
-    const uniqueId = "recaptcha-container-" + Date.now();
-    child.id = uniqueId;
-    parent.appendChild(child);
-
-    try {
-      const verifier = new RecaptchaVerifier(auth, uniqueId, {
-        size: "invisible",
-        callback: () => {
-          console.log("reCAPTCHA solved successfully.");
-        },
-        "expired-callback": () => {
-          console.warn("reCAPTCHA expired. Resetting...");
-          if ((window as any).recaptchaVerifier) {
-            try {
-              (window as any).recaptchaVerifier.clear();
-            } catch (e) {}
-            (window as any).recaptchaVerifier = null;
-          }
-        }
-      });
-      (window as any).recaptchaVerifier = verifier;
-      return verifier;
-    } catch (err) {
-      console.error("Failed to setup RecaptchaVerifier:", err);
-      return null;
-    }
-  };
-
-  const sendFirebaseOtp = async (rawPhone: string) => {
     setAuthLoading(true);
-    setOtpError("");
     try {
-      const phone = rawPhone.trim();
-      if (!phone) {
-        alert("Please enter a phone number.");
-        setAuthLoading(false);
-        return;
+      // 1. Check if user already exists in our DB
+      const checkRes = await fetch(`/api/users?email=${registerEmail.trim()}`);
+      if (checkRes.ok) {
+        const data = await checkRes.json();
+        if (data.exists && data.user) {
+          alert("⚠️ A user is already registered with this email. Please login instead.");
+          setAuthLoading(false);
+          return;
+        }
       }
-      if (phone.length < 10) {
-        alert("Please enter a valid 10-digit phone number.");
-        setAuthLoading(false);
-        return;
-      }
+
+      // 2. Create in Firebase
+      const cred = await createUserWithEmailAndPassword(auth, registerEmail.trim(), registerPassword);
       
-      // Format number for India/Bhopal default (+91)
-      let formattedPhone = phone;
-      if (!formattedPhone.startsWith("+")) {
-        if (formattedPhone.length === 10) {
-          formattedPhone = "+91" + formattedPhone;
-        } else {
-          formattedPhone = "+" + formattedPhone;
-        }
+      // 3. Save to DB
+      const res = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: registerName,
+          phone: registerPhone || "", // optional now
+          email: registerEmail.trim(),
+          location: registerLocation,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to register profile in database.");
       }
 
-      // Check if registering vs logging in
-      if (!isRegistering) {
-        if (loginRole === "vendor") {
-          // Verify vendor exists before sending OTP
-          const res = await fetch(`/api/workers?all=true`);
-          if (res.ok) {
-            const allWorkers = await res.json();
-            const foundWorker = allWorkers.find((w: any) => w.phone === phone);
-            if (!foundWorker) {
-              alert("No registered vendor found with this phone number. Please join as a partner first.");
-              setAuthLoading(false);
-              return;
-            }
-            if (foundWorker.status === "Blocked") {
-              alert("Your account has been blocked by the Admin. Please contact support.");
-              setAuthLoading(false);
-              return;
-            }
-          }
-        } else {
-          // User login mode: Check if user exists
-          const checkRes = await fetch(`/api/users?phone=${phone}`);
-          if (checkRes.ok) {
-            const data = await checkRes.json();
-            if (!data.exists || !data.user) {
-              alert("⚠️ This phone number is not registered. Please Create an Account first!");
-              setAuthLoading(false);
-              return;
-            }
-          } else {
-            alert("⚠️ This phone number is not registered. Please Create an Account first!");
-            setAuthLoading(false);
-            return;
-          }
-        }
-      } else {
-        // Registering mode: Check if user already exists
-        const checkRes = await fetch(`/api/users?phone=${phone}`);
-        if (checkRes.ok) {
-          const data = await checkRes.json();
-          if (data.exists && data.user) {
-            alert("⚠️ A user is already registered with this phone number. Please login instead.");
-            setAuthLoading(false);
-            return;
-          }
-        }
-      }
+      localStorage.setItem("tektonUserEmail", registerEmail.trim());
+      localStorage.setItem("tektonUserName", registerName);
+      localStorage.setItem("tektonUserPhone", registerPhone || "");
+      localStorage.setItem("tektonUserLocation", registerLocation);
+      localStorage.setItem("tektonUserAvatarUrl", "");
+      localStorage.setItem("tektonUserAddress", "");
 
-      // Initialize reCAPTCHA
-      const verifier = setupRecaptcha();
-      if (!verifier) {
-        throw new Error("Could not initialize reCAPTCHA verifier.");
-      }
+      setUserEmail(registerEmail.trim());
+      setUserName(registerName);
+      setUserPhone(registerPhone || "");
+      setSelectedLocation(registerLocation);
+      setIsLoggedIn(true);
+      setShowLoginModal(false);
+      setIsRegistering(false);
+      showToast(`✅ Welcome ${registerName}! Account created successfully.`);
 
-      const confirmation = await signInWithPhoneNumber(auth, formattedPhone, verifier);
-      setConfirmationResult(confirmation);
-      setIsOtpSent(true);
-      showToast("🔑 OTP sent to your mobile number.");
     } catch (err: any) {
-      console.error("Firebase sendOtp error:", err);
-      if ((window as any).recaptchaVerifier) {
-        try {
-          (window as any).recaptchaVerifier.clear();
-        } catch (e) {}
-        (window as any).recaptchaVerifier = null;
-      }
-      setOtpError(err.message || "Failed to send OTP.");
-      alert(`Firebase error: ${err.message || "Failed to send OTP. Please try again."}`);
+      console.error("Firebase Registration Error:", err);
+      alert(`Firebase error: ${err.message || "Failed to register. Please try again."}`);
     } finally {
       setAuthLoading(false);
     }
   };
 
-  const verifyFirebaseOtp = async (code: string) => {
-    if (!confirmationResult) {
-      alert("No active OTP verification session found. Please request a code first.");
+  const handleFirebaseLogin = async () => {
+    if (!loginEmailInput.trim() || !loginPasswordInput.trim()) {
+      alert("Please enter both email and password.");
       return;
     }
-    if (code.trim().length < 6) {
-      alert("Please enter the 6-digit OTP code.");
-      return;
-    }
+
     setAuthLoading(true);
-    setOtpError("");
     try {
-      const result = await confirmationResult.confirm(code);
-      const user = result.user;
-      
-      let verifiedPhone = user.phoneNumber || "";
-      if (verifiedPhone.startsWith("+91")) {
-        verifiedPhone = verifiedPhone.substring(3);
-      }
-      let localPhone = verifiedPhone;
-      if (localPhone.length > 10) {
-        localPhone = localPhone.slice(-10);
-      }
+      // 1. Login with Firebase
+      await signInWithEmailAndPassword(auth, loginEmailInput.trim(), loginPasswordInput);
 
       if (loginRole === "vendor") {
-        localStorage.setItem("tektonWorkerPhone", localPhone);
+        // Vendors might not have emails in DB yet in old schema, but we'll let them login
+        localStorage.setItem("tektonWorkerEmail", loginEmailInput.trim());
         showToast("🔑 Logged in successfully! Accessing Partner Dashboard...");
         setShowLoginModal(false);
         setTimeout(() => {
           window.location.href = "/partner";
         }, 1000);
       } else {
-        if (isRegistering) {
-          try {
-            const res = await fetch("/api/users", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                name: registerName,
-                phone: localPhone,
-                email: registerEmail,
-                location: registerLocation,
-              }),
-            });
-
-            if (!res.ok) {
-              const err = await res.json();
-              throw new Error(err.error || "Failed to register profile in database.");
-            }
-
-            localStorage.setItem("tektonUserPhone", localPhone);
-            localStorage.setItem("tektonUserName", registerName);
-            localStorage.setItem("tektonUserEmail", registerEmail);
-            localStorage.setItem("tektonUserLocation", registerLocation);
-            localStorage.setItem("tektonUserAvatarUrl", "");
-            localStorage.setItem("tektonUserAddress", "");
-
-            setUserPhone(localPhone);
-            setUserName(registerName);
-            setUserEmail(registerEmail);
-            setUserAvatar("");
-            setUserAddress("");
-            setSelectedLocation(registerLocation);
+        // 2. Check user DB
+        const checkRes = await fetch(`/api/users?email=${loginEmailInput.trim()}`);
+        if (checkRes.ok) {
+          const data = await checkRes.json();
+          if (data.exists && data.user) {
+            localStorage.setItem("tektonUserEmail", data.user.email);
+            localStorage.setItem("tektonUserName", data.user.name || "");
+            localStorage.setItem("tektonUserPhone", data.user.phone || "");
+            localStorage.setItem("tektonUserLocation", data.user.location || "");
+            
+            setUserEmail(data.user.email);
+            setUserName(data.user.name || "");
+            setUserPhone(data.user.phone || "");
+            setSelectedLocation(data.user.location || "All Bhopal (MP)");
             setIsLoggedIn(true);
             setShowLoginModal(false);
-            setIsRegistering(false);
-            showToast(`✅ Welcome ${registerName}! Account created successfully.`);
-          } catch (dbErr: any) {
-            console.error("Failed database user write:", dbErr);
-            alert(`Auth succeeded but DB write failed: ${dbErr.message}`);
-          }
-        } else {
-          const checkRes = await fetch(`/api/users?phone=${localPhone}`);
-          if (checkRes.ok) {
-            const data = await checkRes.json();
-            if (data.exists && data.user) {
-              localStorage.setItem("tektonUserPhone", data.user.phone);
-              localStorage.setItem("tektonUserName", data.user.name || "");
-              localStorage.setItem("tektonUserEmail", data.user.email || "");
-              localStorage.setItem("tektonUserLocation", data.user.location || "");
-              
-              const savedAvatar = data.user.avatarUrl || "";
-              const savedAddress = data.user.alternativeAddress || "";
-              localStorage.setItem("tektonUserAvatarUrl", savedAvatar);
-              localStorage.setItem("tektonUserAddress", savedAddress);
-
-              setUserPhone(data.user.phone);
-              setUserName(data.user.name || "");
-              setUserEmail(data.user.email || "");
-              setUserAvatar(savedAvatar);
-              setUserAddress(savedAddress);
-              setSelectedLocation(data.user.location || "All Bhopal (MP)");
-              setIsLoggedIn(true);
-              setShowLoginModal(false);
-              showToast(`🚪 Welcome back, ${data.user.name}!`);
-            } else {
-              alert("⚠️ This phone number is not registered. Please create an account.");
-              setIsRegistering(true);
-            }
+            showToast(`🚪 Welcome back, ${data.user.name}!`);
           } else {
-            alert("⚠️ User lookup failed. Please register.");
-            setIsRegistering(true);
+             alert("⚠️ Your account details are missing from our database. Please contact support.");
           }
         }
       }
     } catch (err: any) {
-      console.error("Verification failed:", err);
-      setOtpError(err.message || "Invalid OTP code.");
-      alert(`Invalid verification code: ${err.message || "Please check the code and try again."}`);
+      console.error("Firebase Login Error:", err);
+      alert(`Firebase error: ${err.message || "Invalid credentials."}`);
     } finally {
       setAuthLoading(false);
     }
@@ -2330,31 +2183,38 @@ export default function TektonApp() {
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-bold text-slate-600 mb-1">Mobile Number *</label>
+                        <label className="block text-xs font-bold text-slate-600 mb-1">Mobile Number (Optional)</label>
                         <input
                           type="tel"
                           placeholder="10-digit number e.g. 9876543210"
-                          title="Your mobile number"
                           value={registerPhone}
                           onChange={(e) => setRegisterPhone(e.target.value)}
                           className="w-full border border-slate-300 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition text-slate-900 bg-white placeholder-slate-400"
                         />
                       </div>
 
-                      {/* Email */}
                       <div>
-                        <label className="block text-xs font-bold text-slate-600 mb-1">Email Address</label>
+                        <label className="block text-xs font-bold text-slate-600 mb-1">Email Address *</label>
                         <input
                           type="email"
                           placeholder="e.g. ramesh@gmail.com"
-                          title="Your email address"
                           value={registerEmail}
                           onChange={(e) => setRegisterEmail(e.target.value)}
                           className="w-full border border-slate-300 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition text-slate-900 bg-white placeholder-slate-400"
                         />
                       </div>
 
-                      {/* Bhopal Zone */}
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 mb-1">Password *</label>
+                        <input
+                          type="password"
+                          placeholder="Create a password"
+                          value={registerPassword}
+                          onChange={(e) => setRegisterPassword(e.target.value)}
+                          className="w-full border border-slate-300 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition text-slate-900 bg-white placeholder-slate-400"
+                        />
+                      </div>
+
                       <div>
                         <label className="block text-xs font-bold text-slate-600 mb-1">📍 Bhopal Zone / Area *</label>
                         <select
@@ -2376,7 +2236,7 @@ export default function TektonApp() {
                           if (registerName.trim().length < 2) { alert("Please enter your full name."); return; }
                           if (registerPhone.trim().length < 10) { alert("Please enter a valid 10-digit mobile number."); return; }
                           if (!registerLocation) { alert("Please select your Bhopal zone."); return; }
-                          await sendFirebaseOtp(registerPhone);
+                          await handleFirebaseRegister();
                         }}
                         disabled={authLoading}
                         className="w-full bg-[#F8CB46] hover:bg-amber-400 disabled:bg-slate-350 disabled:cursor-not-allowed text-slate-900 font-extrabold text-sm px-4 py-3 rounded-xl shadow-md transition mt-2 border border-amber-500 flex items-center justify-center gap-2"
@@ -2428,7 +2288,7 @@ export default function TektonApp() {
                           Change Number
                         </button>
                         <button
-                          onClick={() => sendFirebaseOtp(registerPhone)}
+                          onClick={() => handleFirebaseRegister()}
                           disabled={authLoading}
                           className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3 py-2.5 rounded-xl transition border border-slate-300"
                         >
@@ -2437,7 +2297,7 @@ export default function TektonApp() {
                       </div>
 
                       <button
-                        onClick={() => verifyFirebaseOtp(otpCode)}
+                        onClick={() => handleFirebaseRegister()}
                         disabled={authLoading}
                         className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-350 disabled:cursor-not-allowed text-white font-extrabold text-sm px-4 py-3 rounded-xl shadow-md transition mt-2 flex items-center justify-center gap-2"
                       >
@@ -2520,7 +2380,7 @@ export default function TektonApp() {
                             alert("Please enter a valid 10-digit phone number.");
                             return;
                           }
-                          await sendFirebaseOtp(loginPhoneInput);
+                          await handleFirebaseLogin();
                         }}
                         disabled={authLoading}
                         className="w-full bg-[#F8CB46] hover:bg-amber-400 disabled:bg-slate-350 disabled:cursor-not-allowed text-slate-900 font-extrabold text-sm px-4 py-3 rounded-xl shadow-md transition mt-2 border border-amber-500 flex items-center justify-center gap-2"
@@ -2572,7 +2432,7 @@ export default function TektonApp() {
                           Change Number
                         </button>
                         <button
-                          onClick={() => sendFirebaseOtp(loginPhoneInput)}
+                          onClick={() => handleFirebaseLogin()}
                           disabled={authLoading}
                           className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3 py-2.5 rounded-xl transition border border-slate-300"
                         >
@@ -2581,7 +2441,7 @@ export default function TektonApp() {
                       </div>
 
                       <button
-                        onClick={() => verifyFirebaseOtp(otpCode)}
+                        onClick={() => handleFirebaseRegister()}
                         disabled={authLoading}
                         className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-350 disabled:cursor-not-allowed text-white font-extrabold text-sm px-4 py-3 rounded-xl shadow-md transition mt-2 flex items-center justify-center gap-2"
                       >

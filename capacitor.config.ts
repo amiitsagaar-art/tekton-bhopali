@@ -1,12 +1,13 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.tektonbhopal.app',
+  appId: 'com.tekton.bhopal',
   appName: 'Tekton Bhopal',
   webDir: 'out',
   server: {
-    // For local development on a physical device, uncomment below and use your machine's local IP (e.g., http://192.168.X.X:3000)
-    // url: "http://10.0.2.2:3000", // Android emulator address for localhost
+    // Points to the live Vercel deployment — any web updates will instantly
+    // reflect in the mobile app without rebuilding the APK.
+    url: "https://tekton-bhopali.vercel.app",
     cleartext: true,
     androidScheme: 'https',
     allowNavigation: ['*']

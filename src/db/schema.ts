@@ -39,8 +39,8 @@ export const appointments = pgTable("appointments", {
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
-  phone: varchar("phone", { length: 20 }).notNull().unique(),
-  email: varchar("email", { length: 255 }),
+  phone: varchar("phone", { length: 20 }),
+  email: varchar("email", { length: 255 }).notNull().unique(),
   location: varchar("location", { length: 100 }).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

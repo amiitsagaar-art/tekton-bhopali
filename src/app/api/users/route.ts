@@ -6,9 +6,9 @@ import { eq, desc } from "drizzle-orm";
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const phone = searchParams.get("phone");
+    const email = searchParams.get("email");
 
-    if (!phone) {
+    if (!email) {
       // Fetch all users strictly from database
       const allUsers = await db
         .select()
@@ -20,7 +20,7 @@ export async function GET(request: Request) {
     const result = await db
       .select()
       .from(users)
-      .where(eq(users.phone, phone))
+      .where(eq(users.email, email))
       .limit(1);
 
     if (result && result.length > 0) {
@@ -39,27 +39,27 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { name, phone, email, location } = body;
 
-    if (!name || !phone || !location) {
-      return NextResponse.json({ error: "Missing required fields (name, phone, location)." }, { status: 400 });
+    if (!name || !email || !location) {
+      return NextResponse.json({ error: "Missing required fields (name, email, location)." }, { status: 400 });
     }
 
-    const cleanedPhone = phone.trim();
+    const cleanedEmail = email.trim().toLowerCase();
 
-    // Check if phone number is already registered
+    // Check if email is already registered
     const existing = await db
       .select()
       .from(users)
-      .where(eq(users.phone, cleanedPhone))
+      .where(eq(users.email, cleanedEmail))
       .limit(1);
 
     if (existing && existing.length > 0) {
-      return NextResponse.json({ error: "This phone number is already registered. Please Login securely instead!" }, { status: 400 });
+      return NextResponse.json({ error: "This email is already registered. Please Login securely instead!" }, { status: 400 });
     }
 
     const userValues = {
       name: name.trim(),
-      phone: cleanedPhone,
-      email: email ? email.trim() : "",
+      phone: phone ? phone.trim() : null,
+      email: cleanedEmail,
       location: location.trim(),
     };
 
