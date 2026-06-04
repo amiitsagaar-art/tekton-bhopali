@@ -383,6 +383,10 @@ export default function TektonApp() {
   // State Data
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [reviewingAppId, setReviewingAppId] = useState<number | null>(null);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState("");
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const [loadingWorkers, setLoadingWorkers] = useState(true);
 
   // Modals & Flows
@@ -576,6 +580,51 @@ export default function TektonApp() {
   }, []);
 
   // Fetch appointments list
+  const submitReview = async (appId: number, workerId: number) => {
+    if (!reviewRating) return;
+    setIsSubmittingReview(true);
+    try {
+      const res = await fetch("/api/reviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appointmentId: appId, workerId, rating: reviewRating, comment: reviewComment })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast("🌟 Review submitted successfully!");
+        setReviewingAppId(null);
+        setReviewRating(5);
+        setReviewComment("");
+        fetchAppointments();
+      } else {
+        showToast("⚠️ " + (data.error || "Failed to submit review"));
+      }
+    } catch (e) {
+      showToast("⚠️ Error submitting review");
+    } finally {
+      setIsSubmittingReview(false);
+    }
+  };
+
+  const handleCancelBooking = async (appId: number) => {
+    try {
+      const res = await fetch(`/api/bookings/${appId}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cancellationReason: "User cancelled from app" })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast("❌ " + data.message);
+        fetchAppointments();
+      } else {
+        showToast("⚠️ " + (data.error || "Failed to cancel"));
+      }
+    } catch (e) {
+      showToast("⚠️ Error cancelling booking");
+    }
+  };
+
   const fetchAppointments = async () => {
     try {
       const res = await fetch("/api/appointments");

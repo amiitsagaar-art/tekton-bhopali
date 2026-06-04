@@ -1,12 +1,12 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
-import { LogOut, Calendar, Users, FileCheck, CheckCircle, XCircle, AlertCircle } from "lucide-react"
+import { LogOut, Calendar, Users, FileCheck, CheckCircle, XCircle, AlertCircle, MapPin } from "lucide-react"
 import Link from "next/link"
 
 export default function AdminControlPanel() {
   // Tab selection
-  const [activeTab, setActiveTab] = useState<"bookings" | "workers">("bookings")
+  const [activeTab, setActiveTab] = useState<"bookings" | "workers" | "serviceAreas">("bookings")
 
   // Loading state
   const [isLoading, setIsLoading] = useState(true)
@@ -36,6 +36,12 @@ export default function AdminControlPanel() {
     aadharUrl?: string
     status: string
   }>>([])
+  
+  const [serviceAreas, setServiceAreas] = useState<Array<{
+    id: string
+    name: string
+    isActive: boolean
+  }>>([])
 
   // Helper to mask Aadhaar numbers
   const maskAadhar = (aadhar?: string) => {
@@ -48,18 +54,22 @@ export default function AdminControlPanel() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [bookRes, workerRes] = await Promise.all([
+        const [bookRes, workerRes, areaRes] = await Promise.all([
           fetch("/api/appointments"),
           fetch("/api/workers"),
+          fetch("/api/service-areas"),
         ])
         const bookingsData = bookRes.ok ? await bookRes.json() : []
         const workersData = workerRes.ok ? await workerRes.json() : []
+        const areaData = areaRes.ok ? await areaRes.json() : []
         setBookings(bookingsData)
         setWorkers(workersData)
+        setServiceAreas(areaData)
       } catch (err) {
         console.error("Dashboard fetch error:", err)
         setBookings([])
         setWorkers([])
+        setServiceAreas([])
       } finally {
         setIsLoading(false)
       }
@@ -123,6 +133,22 @@ export default function AdminControlPanel() {
       alert("Error assigning worker");
     }
   };
+
+  const toggleServiceArea = async (id: string, currentStatus: boolean) => {
+    try {
+      const res = await fetch(`/api/service-areas`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, isActive: !currentStatus }),
+      })
+      if (!res.ok) throw new Error("Failed to update area")
+      setServiceAreas(prev =>
+        prev.map(a => (a.id === id ? { ...a, isActive: !currentStatus } : a))
+      )
+    } catch (e) {
+      console.error(e)
+    }
+  }
 
   // Badge rendering helper
   const getStatusBadge = (status: string) => {
@@ -240,8 +266,17 @@ export default function AdminControlPanel() {
               <div className="absolute bottom-0 left-0 w-full h-0.5 bg-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.8)]" />
             )}
           </button>
+          <button
+            onClick={() => setActiveTab("serviceAreas")}
+            className={`pb-4 text-sm sm:text-base font-bold transition-all relative flex items-center gap-2 ${activeTab === "serviceAreas" ? "text-yellow-400" : "text-slate-400 hover: text-slate-200"}`}
+          >
+            Service Zones
+            {activeTab === "serviceAreas" && (
+              <div className="absolute bottom-0 left-0 w-full h-0.5 bg-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.8)]" />
+            )}
+          </button>
         </div>
-
+        
         {/* Tab content */}
         <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
           {activeTab === "bookings" ? (
@@ -308,7 +343,7 @@ export default function AdminControlPanel() {
                 </tbody>
               </table>
             </div>
-          ) : (
+          ) : activeTab === "workers" ? (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm whitespace-nowrap">
                 <thead className="bg-slate-950/50 text-slate-400 font-bold uppercase text-xs border-b border-slate-800">
@@ -359,7 +394,38 @@ export default function AdminControlPanel() {
                 </tbody>
               </table>
             </div>
-          )}
+          ) : activeTab === "serviceAreas" ? (
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  <MapPin className="w-5 h-5 text-yellow-400" /> Bhopal Service Zones
+                </h2>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                {serviceAreas.map(area => (
+                  <div key={area.id} className="bg-slate-800/50 border border-slate-700 p-4 rounded-xl flex items-center justify-between">
+                    <div>
+                      <h3 className="font-bold text-white">{area.name}</h3>
+                      <p className="text-xs text-slate-400">{area.isActive ? "Active" : "Disabled"}</p>
+                    </div>
+                    <button
+                      onClick={() => toggleServiceArea(area.id, area.isActive)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${area.isActive ? 'bg-emerald-500' : 'bg-slate-600'}`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${area.isActive ? 'translate-x-6' : 'translate-x-1'}`}
+                      />
+                    </button>
+                  </div>
+                ))}
+                {serviceAreas.length === 0 && (
+                  <div className="col-span-3 text-center py-8 text-slate-500">
+                    No service areas found.
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null}
         </div>
       </main>
     </div>
