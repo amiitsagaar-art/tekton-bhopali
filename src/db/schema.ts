@@ -4,16 +4,16 @@ export const workers = pgTable("workers", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
   phone: varchar("phone", { length: 20 }).notNull(),
-  category: varchar("category", { length: 100 }).notNull(), // Plumber, Carpenter, Electrician, Painter, Civil Architect, Cleaning, etc.
+  category: varchar("category", { length: 100 }).notNull(),
   experienceYears: integer("experience_years").notNull().default(2),
   basePrice: integer("base_price").notNull().default(49),
-  locations: text("locations").notNull(), // comma separated cities/areas
+  locations: text("locations").notNull(),
   rating: numeric("rating", { precision: 2, scale: 1 }).notNull().default("4.8"),
   reviewsCount: integer("reviews_count").notNull().default(12),
   avatarUrl: text("avatar_url"),
   bio: text("bio"),
   isVerified: boolean("is_verified").notNull().default(true),
-  status: varchar("status", { length: 50 }).notNull().default("Approved"), // Pending, Approved, Rejected
+  status: varchar("status", { length: 50 }).notNull().default("Approved"),
   aadhaarUrl: text("aadhaar_url"),
   panUrl: text("pan_url"),
   passbookUrl: text("passbook_url"),
@@ -26,13 +26,15 @@ export const appointments = pgTable("appointments", {
   customerName: varchar("customer_name", { length: 255 }).notNull(),
   customerPhone: varchar("customer_phone", { length: 20 }).notNull(),
   customerAddress: text("customer_address").notNull(),
-  location: varchar("location", { length: 100 }).notNull(), // Area/City
+  location: varchar("location", { length: 100 }).notNull(),
   category: varchar("category", { length: 100 }).notNull(),
-  description: text("description").notNull(), // User's enquiry details: kya kam karana h
+  description: text("description").notNull(),
   appointmentDate: varchar("appointment_date", { length: 50 }).notNull(),
   appointmentTime: varchar("appointment_time", { length: 50 }).notNull(),
   assignedWorkerId: integer("assigned_worker_id").references(() => workers.id),
-  status: varchar("status", { length: 50 }).notNull().default("Pending"), // Pending, Confirmed, Completed, Cancelled
+  status: varchar("status", { length: 50 }).notNull().default("Pending"),
+  paymentStatus: varchar("payment_status", { length: 50 }).notNull().default("Pending"), // Added for refund logic
+  cancellationReason: text("cancellation_reason"), // Added for cancellation tracking
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -45,3 +47,31 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// NEW TABLE: Service Areas (Geofencing)
+export const serviceAreas = pgTable("service_areas", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 100 }).notNull().unique(), // e.g. MP Nagar, Kolar
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// NEW TABLE: Payments
+export const payments = pgTable("payments", {
+  id: serial("id").primaryKey(),
+  appointmentId: integer("appointment_id").references(() => appointments.id).notNull(),
+  amount: integer("amount").notNull(),
+  status: varchar("status", { length: 50 }).notNull().default("Success"), // Success, Refunded, Failed
+  transactionId: varchar("transaction_id", { length: 255 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// NEW TABLE: Verified Reviews
+export const reviews = pgTable("reviews", {
+  id: serial("id").primaryKey(),
+  appointmentId: integer("appointment_id").references(() => appointments.id).notNull().unique(),
+  workerId: integer("worker_id").references(() => workers.id).notNull(),
+  customerId: integer("customer_id").references(() => users.id),
+  rating: integer("rating").notNull(), // 1 to 5
+  comment: text("comment"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
