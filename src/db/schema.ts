@@ -75,3 +75,13 @@ export const reviews = pgTable("reviews", {
   comment: text("comment"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// NEW TABLE: Recent Works
+export const recentWorks = pgTable("recent_works", {
+  id: serial("id").primaryKey(),
+  title: varchar("title", { length: 255 }).notNull(),
+  category: varchar("category", { length: 100 }).notNull(),
+  location: varchar("location", { length: 100 }).notNull(),
+  imageUrl: text("image_url").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});

@@ -77,3 +77,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Failed to submit review." }, { status: 500 });
   }
 }
+
+export async function GET() {
+  try {
+    const allReviews = await db
+      .select({
+        id: reviews.id,
+        rating: reviews.rating,
+        comment: reviews.comment,
+        createdAt: reviews.createdAt,
+        customerName: appointments.customerName,
+        workerName: workers.name,
+      })
+      .from(reviews)
+      .leftJoin(appointments, eq(reviews.appointmentId, appointments.id))
+      .leftJoin(workers, eq(reviews.workerId, workers.id));
+
+    return NextResponse.json(allReviews);
+  } catch (error: any) {
+    console.error("[GET REVIEWS ERROR]", error);
+    return NextResponse.json({ error: "Failed to fetch reviews" }, { status: 500 });
+  }
+}

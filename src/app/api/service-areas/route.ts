@@ -5,7 +5,17 @@ import { eq, desc } from "drizzle-orm";
 
 export async function GET() {
   try {
-    const areas = await db.select().from(serviceAreas).orderBy(desc(serviceAreas.createdAt));
+    let areas = await db.select().from(serviceAreas).orderBy(desc(serviceAreas.createdAt));
+    
+    // Auto-seed if empty
+    if (areas.length === 0) {
+      const defaultZones = ["Kolar Road", "MP Nagar", "Indrapuri", "Arera Colony", "Ayodhya Bypass"];
+      await db.insert(serviceAreas).values(
+        defaultZones.map(name => ({ name, isActive: true }))
+      );
+      areas = await db.select().from(serviceAreas).orderBy(desc(serviceAreas.createdAt));
+    }
+
     return NextResponse.json(areas);
   } catch (error: any) {
     return NextResponse.json({ error: "Failed to fetch service areas." }, { status: 500 });
