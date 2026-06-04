@@ -8,7 +8,7 @@ import Footer from "@/components/Footer";
 import BookingModal from "@/components/BookingModal";
 import { registerPushNotifications, addPushListeners, removePushListeners } from "@/utils/pushNotifications";
 import { auth } from "@/lib/firebase";
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
+import { sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink } from "firebase/auth";
 import {
   Wrench,
   Hammer,
@@ -270,7 +270,7 @@ export default function TektonApp() {
 
   const handleFirebaseRegister = async () => {
     if (registerName.trim().length < 2) { alert("Please enter your full name."); return; }
-    if (!registerEmail.trim() || !registerPassword.trim()) { alert("Email and Password are required."); return; }
+    if (!registerEmail.trim()) { alert("Email address is required."); return; }
     if (!registerLocation) { alert("Please select your Bhopal zone."); return; }
     
     setAuthLoading(true);
@@ -286,95 +286,56 @@ export default function TektonApp() {
         }
       }
 
-      // 2. Create in Firebase
-      const cred = await createUserWithEmailAndPassword(auth, registerEmail.trim(), registerPassword);
-      
-      // 3. Save to DB
-      const res = await fetch("/api/users", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: registerName,
-          phone: registerPhone || "", // optional now
-          email: registerEmail.trim(),
-          location: registerLocation,
-        }),
-      });
+      // Save registration info in localStorage
+      window.localStorage.setItem('emailForSignIn', registerEmail.trim());
+      window.localStorage.setItem('tempRegName', registerName.trim());
+      window.localStorage.setItem('tempRegPhone', registerPhone.trim());
+      window.localStorage.setItem('tempRegLocation', registerLocation);
+      window.localStorage.setItem('tempRegRole', 'user');
 
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Failed to register profile in database.");
-      }
+      // 2. Send Magic Link
+      const actionCodeSettings = {
+        url: window.location.origin,
+        handleCodeInApp: true,
+      };
+      await sendSignInLinkToEmail(auth, registerEmail.trim(), actionCodeSettings);
 
-      localStorage.setItem("tektonUserEmail", registerEmail.trim());
-      localStorage.setItem("tektonUserName", registerName);
-      localStorage.setItem("tektonUserPhone", registerPhone || "");
-      localStorage.setItem("tektonUserLocation", registerLocation);
-      localStorage.setItem("tektonUserAvatarUrl", "");
-      localStorage.setItem("tektonUserAddress", "");
-
-      setUserEmail(registerEmail.trim());
-      setUserName(registerName);
-      setUserPhone(registerPhone || "");
-      setSelectedLocation(registerLocation);
-      setIsLoggedIn(true);
+      showToast("✉️ Magic Verification link sent to your email! Click it to complete registration.");
       setShowLoginModal(false);
       setIsRegistering(false);
-      showToast(`✅ Welcome ${registerName}! Account created successfully.`);
 
     } catch (err: any) {
-      console.error("Firebase Registration Error:", err);
-      alert(`Firebase error: ${err.message || "Failed to register. Please try again."}`);
+      console.error("Firebase Registration Link Error:", err);
+      alert(`Firebase error: ${err.message || "Failed to send link. Please try again."}`);
     } finally {
       setAuthLoading(false);
     }
   };
 
   const handleFirebaseLogin = async () => {
-    if (!loginEmailInput.trim() || !loginPasswordInput.trim()) {
-      alert("Please enter both email and password.");
+    if (!loginEmailInput.trim()) {
+      alert("Please enter your email address.");
       return;
     }
 
     setAuthLoading(true);
     try {
-      // 1. Login with Firebase
-      await signInWithEmailAndPassword(auth, loginEmailInput.trim(), loginPasswordInput);
+      // Save email and role in localStorage
+      window.localStorage.setItem('emailForSignIn', loginEmailInput.trim());
+      window.localStorage.setItem('tempRegRole', loginRole);
 
-      if (loginRole === "vendor") {
-        // Vendors might not have emails in DB yet in old schema, but we'll let them login
-        localStorage.setItem("tektonWorkerEmail", loginEmailInput.trim());
-        showToast("🔑 Logged in successfully! Accessing Partner Dashboard...");
-        setShowLoginModal(false);
-        setTimeout(() => {
-          window.location.href = "/partner";
-        }, 1000);
-      } else {
-        // 2. Check user DB
-        const checkRes = await fetch(`/api/users?email=${loginEmailInput.trim()}`);
-        if (checkRes.ok) {
-          const data = await checkRes.json();
-          if (data.exists && data.user) {
-            localStorage.setItem("tektonUserEmail", data.user.email);
-            localStorage.setItem("tektonUserName", data.user.name || "");
-            localStorage.setItem("tektonUserPhone", data.user.phone || "");
-            localStorage.setItem("tektonUserLocation", data.user.location || "");
-            
-            setUserEmail(data.user.email);
-            setUserName(data.user.name || "");
-            setUserPhone(data.user.phone || "");
-            setSelectedLocation(data.user.location || "All Bhopal (MP)");
-            setIsLoggedIn(true);
-            setShowLoginModal(false);
-            showToast(`🚪 Welcome back, ${data.user.name}!`);
-          } else {
-             alert("⚠️ Your account details are missing from our database. Please contact support.");
-          }
-        }
-      }
+      // Send Magic Link
+      const actionCodeSettings = {
+        url: window.location.origin,
+        handleCodeInApp: true,
+      };
+      await sendSignInLinkToEmail(auth, loginEmailInput.trim(), actionCodeSettings);
+
+      showToast("✉️ Magic login link sent to your email! Click it to sign in.");
+      setShowLoginModal(false);
     } catch (err: any) {
-      console.error("Firebase Login Error:", err);
-      alert(`Firebase error: ${err.message || "Invalid credentials."}`);
+      console.error("Firebase Login Link Error:", err);
+      alert(`Firebase error: ${err.message || "Failed to send link."}`);
     } finally {
       setAuthLoading(false);
     }
@@ -578,6 +539,128 @@ export default function TektonApp() {
       setNewFeedbackLocation(savedLoc);
     }
   }, []);
+
+  // Handle incoming Magic Link authentication on mount
+  useEffect(() => {
+    const handleMagicLink = async () => {
+      if (isSignInWithEmailLink(auth, window.location.href)) {
+        let email = window.localStorage.getItem('emailForSignIn') || "";
+        if (!email) {
+          email = window.prompt('Please confirm your email address for sign-in:') || "";
+        }
+        if (!email) return;
+
+        setAuthLoading(true);
+        try {
+          const result = await signInWithEmailLink(auth, email.trim(), window.location.href);
+          window.localStorage.removeItem('emailForSignIn');
+
+          const role = window.localStorage.getItem('tempRegRole') || 'user';
+          window.localStorage.removeItem('tempRegRole');
+
+          if (role === 'vendor') {
+            localStorage.setItem("tektonWorkerEmail", email.trim());
+            showToast("🔑 Logged in successfully as partner!");
+            setTimeout(() => {
+              window.location.href = "/partner";
+            }, 1000);
+          } else {
+            const tempName = window.localStorage.getItem('tempRegName');
+            const tempPhone = window.localStorage.getItem('tempRegPhone');
+            const tempLocation = window.localStorage.getItem('tempRegLocation');
+
+            window.localStorage.removeItem('tempRegName');
+            window.localStorage.removeItem('tempRegPhone');
+            window.localStorage.removeItem('tempRegLocation');
+
+            if (tempName && tempLocation) {
+              // Registration flow — save profile to DB
+              const res = await fetch("/api/users", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  name: tempName,
+                  phone: tempPhone || "",
+                  email: email.trim(),
+                  location: tempLocation,
+                }),
+              });
+
+              if (res.ok) {
+                localStorage.setItem("tektonUserEmail", email.trim());
+                localStorage.setItem("tektonUserName", tempName);
+                localStorage.setItem("tektonUserPhone", tempPhone || "");
+                localStorage.setItem("tektonUserLocation", tempLocation);
+
+                setUserEmail(email.trim());
+                setUserName(tempName);
+                setUserPhone(tempPhone || "");
+                setSelectedLocation(tempLocation);
+                setIsLoggedIn(true);
+                showToast(`✅ Welcome ${tempName}! Account created successfully.`);
+              } else {
+                throw new Error("Failed to register profile in database.");
+              }
+            } else {
+              // Login flow — fetch existing profile from DB
+              const checkRes = await fetch(`/api/users?email=${email.trim()}`);
+              if (checkRes.ok) {
+                const data = await checkRes.json();
+                if (data.exists && data.user) {
+                  localStorage.setItem("tektonUserEmail", data.user.email);
+                  localStorage.setItem("tektonUserName", data.user.name || "");
+                  localStorage.setItem("tektonUserPhone", data.user.phone || "");
+                  localStorage.setItem("tektonUserLocation", data.user.location || "");
+
+                  setUserEmail(data.user.email);
+                  setUserName(data.user.name || "");
+                  setUserPhone(data.user.phone || "");
+                  setSelectedLocation(data.user.location || "All Bhopal (MP)");
+                  setIsLoggedIn(true);
+                  showToast(`🚪 Welcome back, ${data.user.name || ""}!`);
+                } else {
+                  // Fallback auto-registration
+                  const defaultName = email.split('@')[0];
+                  const defaultLocation = "Kolar Road";
+                  await fetch("/api/users", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      name: defaultName,
+                      phone: "",
+                      email: email.trim(),
+                      location: defaultLocation,
+                    }),
+                  });
+
+                  localStorage.setItem("tektonUserEmail", email.trim());
+                  localStorage.setItem("tektonUserName", defaultName);
+                  localStorage.setItem("tektonUserPhone", "");
+                  localStorage.setItem("tektonUserLocation", defaultLocation);
+
+                  setUserEmail(email.trim());
+                  setUserName(defaultName);
+                  setUserPhone("");
+                  setSelectedLocation(defaultLocation);
+                  setIsLoggedIn(true);
+                  showToast(`✅ Profile auto-created! Welcome, ${defaultName}!`);
+                }
+              }
+            }
+          }
+          // Clear query params from URL for clean browser state
+          window.history.replaceState({}, document.title, window.location.pathname);
+        } catch (error: any) {
+          console.error("Magic link authentication error:", error);
+          alert(`Authentication failed: ${error.message || "Invalid or expired link."}`);
+        } finally {
+          setAuthLoading(false);
+        }
+      }
+    };
+    handleMagicLink();
+  }, []);
+
 
   // Fetch appointments list
   const submitReview = async (appId: number, workerId: number) => {
@@ -2426,17 +2509,6 @@ export default function TektonApp() {
                       </div>
 
                       <div>
-                        <label className="block text-xs font-bold text-slate-600 mb-1">Password *</label>
-                        <input
-                          type="password"
-                          placeholder="Create a password"
-                          value={registerPassword}
-                          onChange={(e) => setRegisterPassword(e.target.value)}
-                          className="w-full border border-slate-300 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition text-slate-900 bg-white placeholder-slate-400"
-                        />
-                      </div>
-
-                      <div>
                         <label className="block text-xs font-bold text-slate-600 mb-1">📍 Bhopal Zone / Area *</label>
                         <select
                           title="Select your Bhopal area"
@@ -2455,7 +2527,7 @@ export default function TektonApp() {
                       <button
                         onClick={async () => {
                           if (registerName.trim().length < 2) { alert("Please enter your full name."); return; }
-                          if (registerPhone.trim().length < 10) { alert("Please enter a valid 10-digit mobile number."); return; }
+                          if (!registerEmail.trim()) { alert("Please enter your email address."); return; }
                           if (!registerLocation) { alert("Please select your Bhopal zone."); return; }
                           await handleFirebaseRegister();
                         }}
@@ -2465,10 +2537,10 @@ export default function TektonApp() {
                         {authLoading ? (
                           <>
                             <span className="w-4 h-4 border-2 border-slate-900 border-t-transparent rounded-full animate-spin"></span>
-                            Sending SMS...
+                            Sending Magic Link...
                           </>
                         ) : (
-                          "🚀 Verify Phone & Continue"
+                          "✉️ Send Magic Verification Link"
                         )}
                       </button>
                     </>
@@ -2589,23 +2661,10 @@ export default function TektonApp() {
                           className="w-full border border-slate-300 px-4 py-3 rounded-xl text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition text-slate-900 bg-white placeholder-slate-400"
                         />
                       </div>
-                      <div className="mt-4">
-                        <label className="block text-xs font-bold text-slate-600 mb-1">
-                          Password
-                        </label>
-                        <input
-                          type="password"
-                          placeholder="Enter your password"
-                          value={loginPasswordInput}
-                          onChange={(e) => setLoginPasswordInput(e.target.value)}
-                          className="w-full border border-slate-300 px-4 py-3 rounded-xl text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition text-slate-900 bg-white placeholder-slate-400"
-                        />
-                      </div>
-
                       <button
                         onClick={async () => {
-                          if (!loginEmailInput || !loginPasswordInput) {
-                            alert("Please enter both email and password.");
+                          if (!loginEmailInput.trim()) {
+                            alert("Please enter your email address.");
                             return;
                           }
                           await handleFirebaseLogin();
@@ -2616,10 +2675,10 @@ export default function TektonApp() {
                         {authLoading ? (
                           <>
                             <span className="w-4 h-4 border-2 border-slate-900 border-t-transparent rounded-full animate-spin"></span>
-                            Logging in...
+                            Sending Magic Link...
                           </>
                         ) : (
-                          "🔑 Login Securely"
+                          "✉️ Send Magic Login Link"
                         )}
                       </button>
                     </>
