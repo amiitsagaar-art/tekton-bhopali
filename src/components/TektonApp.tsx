@@ -251,6 +251,9 @@ export default function TektonApp() {
   const [registerPassword, setRegisterPassword] = useState("");
   const [loginEmailInput, setLoginEmailInput] = useState("");
   const [loginPasswordInput, setLoginPasswordInput] = useState("");
+  const [registerPassword, setRegisterPassword] = useState("");
+  const [loginEmailInput, setLoginEmailInput] = useState("");
+  const [loginPasswordInput, setLoginPasswordInput] = useState("");
   const [registerLocation, setRegisterLocation] = useState("");
   const [loginRole, setLoginRole] = useState<"user" | "vendor">("user");
   const [authLoading, setAuthLoading] = useState(false);
