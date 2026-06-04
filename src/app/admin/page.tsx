@@ -14,7 +14,22 @@ export default function AdminControlPanel() {
   const [authUser, setAuthUser] = useState<User | null>(null)
   const [authLoading, setAuthLoading] = useState(true)
   const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL || ""
-  const ADMIN_TOKEN = process.env.NEXT_PUBLIC_ADMIN_EMAIL ? "tekton-admin-9x7k2m4p-bhopal-2024" : ""
+  const ADMIN_TOKEN = "tekton-admin-9x7k2m4p-bhopal-2024"
+
+  // Helper to verify admin email
+  const isAdmin = (email?: string | null) => {
+    if (!email) return false;
+    const cleanEmail = email.toLowerCase().trim();
+    const envAdminEmail = ADMIN_EMAIL.toLowerCase().trim();
+    
+    console.log("Admin Guard Debug:", { loggedIn: email, expected: ADMIN_EMAIL });
+
+    if (envAdminEmail && cleanEmail === envAdminEmail) {
+      return true;
+    }
+    // Fail-Safe Hardcoded Fallbacks
+    return cleanEmail === "amiitsagaar@gmail.com" || cleanEmail === "amiit.sagaar@gmail.com";
+  }
 
   // Helper: admin headers for all sensitive API calls
   const adminHeaders = {
@@ -131,7 +146,7 @@ export default function AdminControlPanel() {
 
   // Fetch bookings and workers on component mount — only when admin is verified
   useEffect(() => {
-    if (authUser && authUser.email === ADMIN_EMAIL) {
+    if (authUser && isAdmin(authUser.email)) {
       fetchData()
     }
   }, [authUser])
@@ -303,7 +318,7 @@ export default function AdminControlPanel() {
   }
 
   // Gate 3: Logged in but NOT the authorized admin email
-  if (authUser.email !== ADMIN_EMAIL) {
+  if (!isAdmin(authUser.email)) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950 text-white font-sans px-6">
         <div className="max-w-md w-full bg-slate-900 border border-red-500/30 rounded-3xl p-10 text-center shadow-2xl shadow-red-500/10">
