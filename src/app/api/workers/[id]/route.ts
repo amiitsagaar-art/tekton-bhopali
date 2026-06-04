@@ -2,8 +2,12 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { workers } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { verifyAdminToken } from "@/lib/adminAuth";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  if (!verifyAdminToken(request)) {
+    return NextResponse.json({ error: "Unauthorized. Admin access required." }, { status: 401 });
+  }
   const { id } = await params;
   const body = await request.json();
   const { name, phone, category, experienceYears, basePrice, locations, bio, avatarUrl, isVerified, status, portfolio } = body;
@@ -40,6 +44,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 }
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  if (!verifyAdminToken(request)) {
+    return NextResponse.json({ error: "Unauthorized. Admin access required." }, { status: 401 });
+  }
   const { id } = await params;
   try {
     const deleted = await db

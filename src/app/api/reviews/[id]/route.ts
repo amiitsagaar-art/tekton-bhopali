@@ -2,8 +2,13 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { reviews } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { verifyAdminToken } from "@/lib/adminAuth";
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  if (!verifyAdminToken(request)) {
+    return NextResponse.json({ error: "Unauthorized. Admin access required." }, { status: 401 });
+  }
+
   try {
     const p = await params;
     const { id } = p;

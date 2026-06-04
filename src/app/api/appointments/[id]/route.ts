@@ -3,8 +3,12 @@ import { db } from "@/db";
 import { appointments, workers } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { sendWhatsAppMessage } from "@/utils/whatsapp";
+import { verifyAdminToken } from "@/lib/adminAuth";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  if (!verifyAdminToken(request)) {
+    return NextResponse.json({ error: "Unauthorized. Admin access required." }, { status: 401 });
+  }
   try {
     const { id } = await params;
     const body = await request.json();
@@ -75,6 +79,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 }
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  if (!verifyAdminToken(request)) {
+    return NextResponse.json({ error: "Unauthorized. Admin access required." }, { status: 401 });
+  }
   try {
     const { id } = await params;
     const deleted = await db

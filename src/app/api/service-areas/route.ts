@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { serviceAreas } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
+import { verifyAdminToken } from "@/lib/adminAuth";
 
 export async function GET() {
   try {
@@ -23,6 +24,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  if (!verifyAdminToken(request)) {
+    return NextResponse.json({ error: "Unauthorized. Admin access required." }, { status: 401 });
+  }
   try {
     const body = await request.json();
     const { name, isActive } = body;
@@ -41,6 +45,9 @@ export async function POST(request: Request) {
 }
 
 export async function PUT(request: Request) {
+  if (!verifyAdminToken(request)) {
+    return NextResponse.json({ error: "Unauthorized. Admin access required." }, { status: 401 });
+  }
   try {
     const body = await request.json();
     const { id, isActive } = body;

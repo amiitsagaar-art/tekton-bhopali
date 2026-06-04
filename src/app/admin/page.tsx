@@ -1,17 +1,39 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
-import { LogOut, Calendar, Users, FileCheck, CheckCircle, XCircle, AlertCircle, MapPin, Star, Trash2, Image as ImageIcon, UploadCloud } from "lucide-react"
+import { LogOut, Calendar, Users, FileCheck, CheckCircle, XCircle, AlertCircle, MapPin, Star, Trash2, Image as ImageIcon, UploadCloud, ShieldOff, Shield } from "lucide-react"
 import Link from "next/link"
+import { auth } from "@/lib/firebase"
+import { onAuthStateChanged, signOut, User } from "firebase/auth"
 
 export default function AdminControlPanel() {
   // Tab selection
   const [activeTab, setActiveTab] = useState<"bookings" | "workers" | "serviceAreas" | "reviews" | "recentWorks">("bookings")
 
-  // Loading state
-  const [isLoading, setIsLoading] = useState(true)
+  // Auth states
+  const [authUser, setAuthUser] = useState<User | null>(null)
+  const [authLoading, setAuthLoading] = useState(true)
+  const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL || ""
+  const ADMIN_TOKEN = process.env.NEXT_PUBLIC_ADMIN_EMAIL ? "tekton-admin-9x7k2m4p-bhopal-2024" : ""
+
+  // Helper: admin headers for all sensitive API calls
+  const adminHeaders = {
+    "Content-Type": "application/json",
+    "x-admin-token": ADMIN_TOKEN,
+  }
+
+  // Firebase Auth listener — runs once on mount
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setAuthUser(user)
+      setAuthLoading(false)
+    })
+    return () => unsubscribe()
+  }, [])
 
   // Real data states (initially empty)
+  const [isLoading, setIsLoading] = useState(true)
+
   const [bookings, setBookings] = useState<Array<{
     id: string
     customerName: string
@@ -107,17 +129,19 @@ export default function AdminControlPanel() {
     }
   }
 
-  // Fetch bookings and workers on component mount
+  // Fetch bookings and workers on component mount — only when admin is verified
   useEffect(() => {
-    fetchData()
-  }, [])
+    if (authUser && authUser.email === ADMIN_EMAIL) {
+      fetchData()
+    }
+  }, [authUser])
 
   // Update booking status via API
   const updateBookingStatus = async (id: string, newStatus: string) => {
     try {
       const res = await fetch(`/api/appointments/${id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: adminHeaders,
         body: JSON.stringify({ status: newStatus }),
       })
       if (!res.ok) throw new Error("Failed to update booking")
@@ -134,7 +158,7 @@ export default function AdminControlPanel() {
     try {
       const res = await fetch(`/api/workers/${workerId}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: adminHeaders,
         body: JSON.stringify({ status: newStatus }),
       })
       if (!res.ok) throw new Error("Failed to update worker")
@@ -152,7 +176,7 @@ export default function AdminControlPanel() {
     try {
       const res = await fetch(`/api/appointments/${bookingId}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: adminHeaders,
         body: JSON.stringify({ assignedWorkerId: workerId, status: "Assigned" }),
       });
       if (!res.ok) throw new Error("Failed to assign worker");
@@ -172,7 +196,7 @@ export default function AdminControlPanel() {
     try {
       const res = await fetch(`/api/service-areas`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: adminHeaders,
         body: JSON.stringify({ id, isActive: !currentStatus }),
       })
       if (!res.ok) throw new Error("Failed to update area")
@@ -187,7 +211,10 @@ export default function AdminControlPanel() {
   const deleteReview = async (id: string) => {
     if (!confirm("Are you sure you want to delete this review?")) return;
     try {
-      const res = await fetch(`/api/reviews/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/reviews/${id}`, {
+        method: "DELETE",
+        headers: adminHeaders,
+      });
       if (res.ok) {
         setReviews(prev => prev.filter(r => r.id !== id));
       } else {
@@ -204,7 +231,7 @@ export default function AdminControlPanel() {
     try {
       const res = await fetch("/api/recent-works", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: adminHeaders,
         body: JSON.stringify(newWork)
       });
       if (res.ok) {
@@ -240,11 +267,88 @@ export default function AdminControlPanel() {
     }
   }
 
-  // Loading UI
+  // ──────────────────────────────────────────────
+  // SECURITY GATES — shown before the main dashboard
+  // ──────────────────────────────────────────────
+
+  // Gate 1: Firebase auth still resolving
+  if (authLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950 text-white font-sans gap-4">
+        <div className="w-12 h-12 border-4 border-yellow-400 border-t-transparent rounded-full animate-spin" />
+        <p className="text-slate-400 text-sm font-medium tracking-widest uppercase">Verifying Identity...</p>
+      </div>
+    )
+  }
+
+  // Gate 2: Not logged in at all
+  if (!authUser) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950 text-white font-sans px-6">
+        <div className="max-w-md w-full bg-slate-900 border border-red-500/30 rounded-3xl p-10 text-center shadow-2xl shadow-red-500/10">
+          <div className="w-20 h-20 rounded-full bg-red-500/10 border-2 border-red-500/30 flex items-center justify-center mx-auto mb-6">
+            <ShieldOff className="w-10 h-10 text-red-500" />
+          </div>
+          <h1 className="text-2xl font-black text-white mb-2">Access Denied</h1>
+          <p className="text-slate-400 text-sm mb-6">You must be signed in to view this page.</p>
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-bold px-6 py-3 rounded-xl transition text-sm"
+          >
+            Go to Login
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
+  // Gate 3: Logged in but NOT the authorized admin email
+  if (authUser.email !== ADMIN_EMAIL) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950 text-white font-sans px-6">
+        <div className="max-w-md w-full bg-slate-900 border border-red-500/30 rounded-3xl p-10 text-center shadow-2xl shadow-red-500/10">
+          <div className="w-20 h-20 rounded-full bg-red-500/10 border-2 border-red-500/30 flex items-center justify-center mx-auto mb-6 relative">
+            <ShieldOff className="w-10 h-10 text-red-500" />
+            <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
+              <span className="text-[10px] font-black text-white">!</span>
+            </div>
+          </div>
+          <h1 className="text-2xl font-black text-white mb-2">Unauthorized</h1>
+          <p className="text-slate-400 text-sm mb-1">
+            <span className="text-red-400 font-bold">{authUser.email}</span>
+          </p>
+          <p className="text-slate-500 text-sm mb-6">This account does not have admin privileges.</p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <button
+              onClick={() => signOut(auth)}
+              className="inline-flex items-center gap-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 font-bold px-5 py-2.5 rounded-xl transition text-sm"
+            >
+              <LogOut className="w-4 h-4" /> Sign Out
+            </button>
+            <Link
+              href="/"
+              className="inline-flex items-center gap-2 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-bold px-5 py-2.5 rounded-xl transition text-sm"
+            >
+              Back to Home
+            </Link>
+          </div>
+        </div>
+        <p className="text-slate-700 text-xs mt-6">Tekton Admin — Unauthorized Access Attempt Logged</p>
+      </div>
+    )
+  }
+
+  // Gate 4: Authorized admin — data still loading
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-slate-950 text-white font-sans">
-        <p className="text-xl font-medium">Loading dashboard data...</p>
+      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950 text-white font-sans gap-4">
+        <div className="flex items-center gap-3">
+          <Shield className="w-6 h-6 text-yellow-400" />
+          <p className="text-slate-300 font-medium">Loading Master Control...</p>
+        </div>
+        <div className="w-48 h-1 bg-slate-800 rounded-full overflow-hidden">
+          <div className="h-full bg-yellow-400 rounded-full animate-pulse w-3/4" />
+        </div>
       </div>
     )
   }
