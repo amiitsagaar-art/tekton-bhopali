@@ -366,26 +366,26 @@ export default function TektonApp() {
         const passwordToUse = mode === "register" ? (registerPassword || "tekton-bhopal-secure-default-otp-password-2024") : (loginPasswordInput || "tekton-bhopal-secure-default-otp-password-2024");
         await createUserWithEmailAndPassword(auth, email.trim(), passwordToUse);
       } catch (fbErr: any) {
-        if (fbErr.code === "auth/email-already-in-use" || fbErr.code === "auth/credential-already-in-use") {
-          try {
-            const passwordToUse = mode === "register" ? (registerPassword || "tekton-bhopal-secure-default-otp-password-2024") : (loginPasswordInput || "tekton-bhopal-secure-default-otp-password-2024");
-            await signInWithEmailAndPassword(auth, email.trim(), passwordToUse);
-          } catch (signInErr: any) {
-            if (
-              signInErr.code === "auth/invalid-credential" || 
-              signInErr.code === "auth/wrong-password" || 
-              signInErr.message?.includes("invalid-credential")
-            ) {
-              setRequiresPassword(true);
-              setAuthLoading(false);
-              setOtpError("This account uses a custom password. Please enter your password below to log in.");
-              return;
-            } else {
-              throw signInErr;
-            }
+        console.warn("Firebase sign-up failed, falling back to sign-in:", fbErr);
+        try {
+          const passwordToUse = mode === "register" ? (registerPassword || "tekton-bhopal-secure-default-otp-password-2024") : (loginPasswordInput || "tekton-bhopal-secure-default-otp-password-2024");
+          await signInWithEmailAndPassword(auth, email.trim(), passwordToUse);
+        } catch (signInErr: any) {
+          const errCode = signInErr.code || "";
+          const errMsg = signInErr.message || "";
+          if (
+            errCode === "auth/invalid-credential" || 
+            errCode === "auth/wrong-password" || 
+            errMsg.includes("invalid-credential") || 
+            errMsg.includes("wrong-password")
+          ) {
+            setRequiresPassword(true);
+            setAuthLoading(false);
+            setOtpError("This account uses a custom password. Please enter your password below to log in.");
+            return;
+          } else {
+            throw signInErr;
           }
-        } else {
-          throw fbErr;
         }
       }
 
