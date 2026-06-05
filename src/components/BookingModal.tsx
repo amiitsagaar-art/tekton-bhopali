@@ -106,8 +106,20 @@ export default function BookingModal({
       fetch("/api/pricing")
         .then(r => r.json())
         .then(data => {
-          if (data.prices && data.prices[serviceName]) {
-            setApiBasePrice(data.prices[serviceName]);
+          // Normalize serviceName to match pricing API categories
+          const mapping: Record<string, string> = {
+            "Plumber": "Plumbing",
+            "Carpenter": "Carpentry",
+            "Electrician": "Electrician",
+            "Painter": "Painting",
+            "Cleaning Service": "Cleaning",
+            "AC & Appliances": "AC Repair",
+            "Civil Architect": "Civil Work",
+            "Civil Construction": "Civil Work",
+          };
+          const pricingKey = mapping[serviceName] || serviceName;
+          if (data.prices && data.prices[pricingKey]) {
+            setApiBasePrice(data.prices[pricingKey]);
           }
         })
         .catch(() => {}); // silently fallback to prop basePrice

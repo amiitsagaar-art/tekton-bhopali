@@ -2084,7 +2084,7 @@ export default function TektonApp() {
                           {app.status !== "Cancelled" && app.status !== "Completed" && (
                             <button
                               disabled={app.status === "OnTheWay"}
-                              onClick={() => updateAppointmentStatus(app.id, "Cancelled")}
+                              onClick={() => handleCancelBooking(app.id)}
                               className={`text-[11px] font-bold px-3 py-1.5 rounded-lg transition border ${
                                 app.status === "OnTheWay"
                                   ? "bg-slate-800 border-white/5 text-slate-500 cursor-not-allowed opacity-50"
@@ -2119,24 +2119,10 @@ export default function TektonApp() {
         initialLocation={bookingForm.location}
         onSubmit={async (finalData) => {
           try {
-            const basePriceValue = selectedWorkerForBooking ? selectedWorkerForBooking.basePrice : 99;
-            const finalPriceValue = Math.max(0, basePriceValue - (finalData.couponDiscount || 0));
-            const payload = {
-              customerName: finalData.customerName,
-              phoneNumber: finalData.customerPhone,
-              locationZone: finalData.location,
-              exactAddress: finalData.customerAddress,
-              serviceCategory: finalData.category,
-              description: finalData.description,
-              visitDate: finalData.appointmentDate,
-              timeSlot: finalData.appointmentTime,
-              totalPrice: finalPriceValue,
-            };
-
             const res = await fetch("/api/appointments", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(payload),
+              body: JSON.stringify(finalData),
             });
 
             if (!res.ok) {
@@ -2146,13 +2132,13 @@ export default function TektonApp() {
             }
 
             await fetchAppointments();
-            showToast(`⚡ Appointment Confirmed! Assigned artisan dispatching to ${finalData.location} shortly.`);
-            addNotification(`New Booking: ${finalData.category} task on ${finalData.appointmentDate}`);
+            showToast(`⚡ Appointment Confirmed! Assigned artisan dispatching to ${finalData.locationZone} shortly.`);
+            addNotification(`New Booking: ${finalData.serviceCategory} task on ${finalData.visitDate}`);
             setCurrentTab("appointments");
 
             // Save user session based on booking phone
-            setUserPhone(finalData.customerPhone);
-            localStorage.setItem("tektonUserPhone", finalData.customerPhone);
+            setUserPhone(finalData.phoneNumber);
+            localStorage.setItem("tektonUserPhone", finalData.phoneNumber);
             setIsLoggedIn(true);
 
           } catch (err) {
