@@ -297,6 +297,9 @@ export default function TektonApp() {
         throw new Error(otpData.error || "Failed to send OTP email.");
       }
 
+      if (otpData.otp) {
+        alert(`[Mock Mode] Your OTP verification code is: ${otpData.otp}`);
+      }
       showToast("✉️ 6-Digit OTP sent to your email!");
       setIsOtpSent(true);
     } catch (err: any) {
@@ -326,6 +329,9 @@ export default function TektonApp() {
         throw new Error(otpData.error || "Failed to send OTP email.");
       }
 
+      if (otpData.otp) {
+        alert(`[Mock Mode] Your OTP verification code is: ${otpData.otp}`);
+      }
       showToast("✉️ 6-Digit OTP sent to your email!");
       setIsOtpSent(true);
     } catch (err: any) {
