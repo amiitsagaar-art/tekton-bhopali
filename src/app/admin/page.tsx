@@ -13,6 +13,9 @@ export default function AdminControlPanel() {
   // Auth states
   const [authUser, setAuthUser] = useState<User | null>(null)
   const [authLoading, setAuthLoading] = useState(true)
+  const [adminTokenInput, setAdminTokenInput] = useState("")
+  const [tokenError, setTokenError] = useState("")
+  const [isTokenVerified, setIsTokenVerified] = useState(false)
   const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL || ""
   // NOTE: Admin token is sent via header but should be stored in env only
   // The actual secret lives in ADMIN_SECRET_TOKEN server-side env var
@@ -61,6 +64,21 @@ export default function AdminControlPanel() {
     
     return () => unsubscribe();
   }, [ADMIN_EMAIL]);
+
+  // Authorization check based on Firebase Auth or Admin Secret Token
+  useEffect(() => {
+    const savedToken = localStorage.getItem("tektonAdminToken");
+    const localEmail = localStorage.getItem("tektonUserEmail");
+    const isLocalEmailAdmin = localEmail && (localEmail.toLowerCase().trim() === "amiitsagaar@gmail.com" || localEmail.toLowerCase().trim() === "amiit.sagaar@gmail.com" || (ADMIN_EMAIL && localEmail.toLowerCase().trim() === ADMIN_EMAIL.toLowerCase().trim()));
+
+    if (authUser && isAdmin(authUser.email)) {
+      setIsTokenVerified(true);
+    } else if (savedToken === ADMIN_TOKEN && isLocalEmailAdmin) {
+      setIsTokenVerified(true);
+    } else {
+      setIsTokenVerified(false);
+    }
+  }, [authUser, ADMIN_TOKEN, ADMIN_EMAIL]);
 
   // Real data states (initially empty)
   const [isLoading, setIsLoading] = useState(true)
@@ -420,63 +438,74 @@ export default function AdminControlPanel() {
     )
   }
 
-  // Gate 2: Not logged in at all
-  if (!authUser) {
+  // Gate 2: Not authorized (Either not logged in as Admin, or token not verified)
+  if (!isTokenVerified) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950 text-white font-sans px-6">
-        <div className="max-w-md w-full bg-slate-900 border border-red-500/30 rounded-3xl p-10 text-center shadow-2xl shadow-red-500/10">
-          <div className="w-20 h-20 rounded-full bg-red-500/10 border-2 border-red-500/30 flex items-center justify-center mx-auto mb-6">
-            <ShieldOff className="w-10 h-10 text-red-500" />
+        <div className="max-w-md w-full bg-slate-900 border border-white/10 rounded-3xl p-10 text-center shadow-2xl relative">
+          <div className="w-20 h-20 rounded-full bg-yellow-500/10 border-2 border-yellow-500/30 flex items-center justify-center mx-auto mb-6">
+            <Shield className="w-10 h-10 text-yellow-400" />
           </div>
-          <h1 className="text-2xl font-black text-white mb-2">Access Denied</h1>
-          <p className="text-slate-400 text-sm mb-6">You must be signed in to view this page.</p>
-          <Link
-            href="/"
-            className="inline-flex items-center gap-2 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-bold px-6 py-3 rounded-xl transition text-sm"
-          >
-            Go to Login
-          </Link>
-        </div>
-      </div>
-    )
-  }
-
-  // Gate 3: Logged in but NOT the authorized admin email
-  if (!isAdmin(authUser.email)) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950 text-white font-sans px-6">
-        <div className="max-w-md w-full bg-slate-900 border border-red-500/30 rounded-3xl p-10 text-center shadow-2xl shadow-red-500/10">
-          <div className="w-20 h-20 rounded-full bg-red-500/10 border-2 border-red-500/30 flex items-center justify-center mx-auto mb-6 relative">
-            <ShieldOff className="w-10 h-10 text-red-500" />
-            <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
-              <span className="text-[10px] font-black text-white">!</span>
-            </div>
-          </div>
-          <h1 className="text-2xl font-black text-white mb-2">Unauthorized</h1>
-          <p className="text-slate-400 text-sm mb-1">
-            <span className="text-red-400 font-bold">{authUser.email}</span>
+          <h1 className="text-2xl font-black text-white mb-2">Master Control Locked</h1>
+          <p className="text-slate-400 text-sm mb-6">
+            Please enter the Admin Secret Token to unlock the dashboard.
           </p>
-          <p className="text-slate-500 text-sm mb-6">This account does not have admin privileges.</p>
-          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (adminTokenInput.trim() === ADMIN_TOKEN) {
+                localStorage.setItem("tektonAdminToken", adminTokenInput.trim());
+                setIsTokenVerified(true);
+                setTokenError("");
+              } else {
+                setTokenError("Invalid Admin Secret Token!");
+              }
+            }}
+            className="space-y-4"
+          >
+            <div>
+              <input
+                type="password"
+                placeholder="Enter Admin Secret Token"
+                value={adminTokenInput}
+                onChange={(e) => setAdminTokenInput(e.target.value)}
+                className="w-full bg-slate-950 border border-white/10 text-center text-sm rounded-xl px-4 py-3 focus:outline-none focus:border-yellow-400 transition text-white placeholder-slate-600 font-mono"
+              />
+            </div>
+
+            {tokenError && (
+              <p className="text-rose-500 text-xs font-bold">{tokenError}</p>
+            )}
+
             <button
-              onClick={async () => {
-                await signOut(auth);
-                localStorage.removeItem("tektonUserEmail");
-                localStorage.removeItem("tektonUserName");
-              }}
-              className="inline-flex items-center gap-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 font-bold px-5 py-2.5 rounded-xl transition text-sm"
+              type="submit"
+              className="w-full bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-extrabold text-sm py-3 rounded-xl transition shadow-lg shadow-yellow-500/10 cursor-pointer"
             >
-              <LogOut className="w-4 h-4" /> Sign Out
+              Unlock Dashboard
             </button>
-            <Link
-              href="/"
-              className="inline-flex items-center gap-2 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-bold px-5 py-2.5 rounded-xl transition text-sm"
-            >
+          </form>
+
+          <div className="flex justify-between items-center mt-6 pt-6 border-t border-white/5 text-xs">
+            <Link href="/" className="text-slate-500 hover:text-slate-400 underline underline-offset-4 font-bold">
               Back to Home
             </Link>
+            {authUser && (
+              <button
+                onClick={async () => {
+                  await signOut(auth);
+                  localStorage.removeItem("tektonUserEmail");
+                  localStorage.removeItem("tektonUserName");
+                  localStorage.removeItem("tektonAdminToken");
+                  setIsTokenVerified(false);
+                }}
+                className="text-red-400 hover:text-red-300 font-bold cursor-pointer"
+              >
+                Sign Out ({authUser.email?.split("@")[0]})
+              </button>
+            )}
           </div>
         </div>
-        <p className="text-slate-700 text-xs mt-6">Tekton Admin — Unauthorized Access Attempt Logged</p>
       </div>
     )
   }
