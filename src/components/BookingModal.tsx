@@ -55,13 +55,6 @@ const TIME_SLOTS = [
   "Urgent (Within 45 Mins)"
 ];
 
-const COUPONS: Record<string, { discount: number; desc: string }> = {
-  TEKTON10: { discount: 10, desc: "10% off on all booking base charges" },
-  FIRSTBOOK: { discount: 25, desc: "₹25 off on your first service booking" },
-  BHOPAL2026: { discount: 30, desc: "₹30 off special Bhopal launch discount" },
-  WELCOME49: { discount: 15, desc: "₹15 off first-time user coupon" },
-};
-
 export default function BookingModal({
   isOpen,
   onClose,
@@ -79,53 +72,94 @@ export default function BookingModal({
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
-  const [location, setLocation] = useState(initialLocation);
-  const [appointmentDate, setAppointmentDate] = useState("");
-  const [appointmentTime, setAppointmentTime] = useState(TIME_SLOTS[6]); // default to urgent
+  const [locationZone, setLocationZone] = useState(initialLocation);
+  const [visitDate, setVisitDate] = useState("");
+  const [timeSlot, setTimeSlot] = useState(TIME_SLOTS[6]); // default to urgent
+
+  // Pricing from API
+  const [apiBasePrice, setApiBasePrice] = useState<number | null>(null);
 
   // Coupon & Payment states
   const [couponCode, setCouponCode] = useState("");
   const [couponApplied, setCouponApplied] = useState(false);
   const [couponDiscount, setCouponDiscount] = useState(0);
+  const [couponIsPercentage, setCouponIsPercentage] = useState(false);
+  const [couponDesc, setCouponDesc] = useState("");
   const [couponError, setCouponError] = useState("");
+  const [couponLoading, setCouponLoading] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"Cash" | "UPI" | "Card">("Cash");
 
-  // Load existing profile details if stored in localStorage
+  // Load profile + API price on open
   useEffect(() => {
     if (isOpen) {
-      // Set default date to today
+      // Set default date to today (min date)
       const today = new Date().toISOString().split("T")[0];
-      setAppointmentDate(today);
+      setVisitDate(today);
 
       // Pre-fill user data if available
       const savedPhone = localStorage.getItem("tektonUserPhone") || "";
-      if (savedPhone) {
-        setCustomerPhone(savedPhone);
-      }
-      
-      // Auto pre-fill names if saved
+      if (savedPhone) setCustomerPhone(savedPhone);
       const savedName = localStorage.getItem("tektonUserName") || "";
-      if (savedName) {
-        setCustomerName(savedName);
-      }
+      if (savedName) setCustomerName(savedName);
+
+      // Fetch API pricing for this service category
+      fetch("/api/pricing")
+        .then(r => r.json())
+        .then(data => {
+          if (data.prices && data.prices[serviceName]) {
+            setApiBasePrice(data.prices[serviceName]);
+          }
+        })
+        .catch(() => {}); // silently fallback to prop basePrice
     }
-  }, [isOpen]);
+  }, [isOpen, serviceName]);
 
   if (!isOpen) return null;
 
-  const actualBasePrice = worker ? worker.basePrice : Number(basePrice) || 99;
-  const finalPrice = Math.max(0, actualBasePrice - (couponApplied ? couponDiscount : 0));
+  // Price resolution: worker price > API price > prop price > 99
+  const actualBasePrice = worker
+    ? worker.basePrice
+    : (apiBasePrice ?? Number(basePrice)) || 99;
 
-  const handleApplyCoupon = () => {
-    const code = couponCode.trim().toUpperCase();
-    if (COUPONS[code]) {
-      setCouponApplied(true);
-      setCouponDiscount(COUPONS[code].discount);
-      setCouponError("");
-    } else {
-      setCouponError("Invalid coupon code");
-      setCouponApplied(false);
-      setCouponDiscount(0);
+  // Final price with coupon applied
+  const couponDeducted = couponApplied
+    ? couponIsPercentage
+      ? Math.round((actualBasePrice * couponDiscount) / 100)
+      : couponDiscount
+    : 0;
+  const finalPrice = Math.max(0, actualBasePrice - couponDeducted);
+
+  // Today string for date min attribute
+  const todayStr = new Date().toISOString().split("T")[0];
+
+  // Server-side coupon validation
+  const handleApplyCoupon = async () => {
+    const code = couponCode.trim();
+    if (!code) return;
+    setCouponLoading(true);
+    setCouponError("");
+    try {
+      const res = await fetch("/api/pricing/validate-coupon", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+      const data = await res.json();
+      if (data.valid) {
+        setCouponApplied(true);
+        setCouponDiscount(data.discountValue);
+        setCouponIsPercentage(data.isPercentage);
+        setCouponDesc(data.description || "");
+        setCouponError("");
+      } else {
+        setCouponError(data.error || "Invalid coupon code");
+        setCouponApplied(false);
+        setCouponDiscount(0);
+      }
+    } catch {
+      setCouponError("Network error. Try again.");
+    } finally {
+      setCouponLoading(false);
     }
   };
 
@@ -133,6 +167,8 @@ export default function BookingModal({
     setCouponApplied(false);
     setCouponCode("");
     setCouponDiscount(0);
+    setCouponIsPercentage(false);
+    setCouponDesc("");
     setCouponError("");
   };
 
@@ -149,40 +185,33 @@ export default function BookingModal({
   // Step 2 Validation
   const handleStep2Next = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!customerName.trim()) {
-      alert("Please enter your name.");
-      return;
-    }
-    if (!customerPhone.trim() || customerPhone.trim().length < 10) {
-      alert("Please enter a valid 10-digit phone number.");
-      return;
-    }
-    if (!customerAddress.trim()) {
-      alert("Please enter your complete address.");
-      return;
-    }
+    if (!customerName.trim()) { alert("Please enter your name."); return; }
+    if (!customerPhone.trim() || customerPhone.trim().length < 10) { alert("Please enter a valid 10-digit phone number."); return; }
+    if (!customerAddress.trim()) { alert("Please enter your complete address."); return; }
+    if (visitDate < todayStr) { alert("Please select today or a future date."); return; }
     setStep(3);
   };
 
-  // Step 3 Submission
+  // Step 3 Submission — field names match the appointments API
   const handleFinalSubmit = async () => {
     setIsSubmitting(true);
     try {
       const finalPayload = {
-        category: serviceName,
+        serviceCategory: serviceName,
         description,
         customerName,
-        customerPhone,
-        customerAddress,
-        location,
-        appointmentDate,
-        appointmentTime,
+        phoneNumber: customerPhone,        // ✅ API expects phoneNumber
+        exactAddress: customerAddress,     // ✅ API expects exactAddress
+        locationZone,                      // ✅ API expects locationZone
+        visitDate,                         // ✅ API expects visitDate
+        timeSlot,                          // ✅ API expects timeSlot
+        totalPrice: finalPrice,            // ✅ API expects totalPrice
         couponCode: couponApplied ? couponCode : "",
-        couponDiscount,
+        couponDiscount: couponDeducted,
         paymentMethod,
         assignedWorkerId: worker ? worker.id : null,
       };
-      
+
       // Save name & phone for future convenience
       localStorage.setItem("tektonUserPhone", customerPhone);
       localStorage.setItem("tektonUserName", customerName);
@@ -301,7 +330,7 @@ export default function BookingModal({
                   onChange={(e) => setDescription(e.target.value)}
                   className="w-full bg-slate-950/60 border border-white/10 rounded-xl p-3.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-yellow-400 transition leading-relaxed"
                 />
-                <span className="text-[10px] text-slate-450 block italic">
+                <span className="text-[10px] text-slate-400 block italic">
                   Be descriptive so the artisan comes prepared with the correct tools.
                 </span>
               </div>
@@ -376,8 +405,8 @@ export default function BookingModal({
                       <MapPin className="absolute left-3 top-3 w-4 h-4 text-slate-500" />
                       <select
                         title="Bhopal Location"
-                        value={location}
-                        onChange={(e) => setLocation(e.target.value)}
+                        value={locationZone}
+                        onChange={(e) => setLocationZone(e.target.value)}
                         className="w-full bg-slate-950/60 border border-white/10 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-yellow-400 transition"
                       >
                         {BHOPAL_LOCATIONS.map((loc) => (
@@ -413,9 +442,10 @@ export default function BookingModal({
                     <input
                       type="date"
                       required
+                      min={todayStr}
                       title="Select Appointment Date"
-                      value={appointmentDate}
-                      onChange={(e) => setAppointmentDate(e.target.value)}
+                      value={visitDate}
+                      onChange={(e) => setVisitDate(e.target.value)}
                       className="w-full bg-slate-950/60 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-yellow-400 transition"
                     />
                   </div>
@@ -424,8 +454,8 @@ export default function BookingModal({
                     <label className="block text-[10px] text-slate-400 font-bold uppercase">Time Slot *</label>
                     <select
                       title="Select Appointment Time"
-                      value={appointmentTime}
-                      onChange={(e) => setAppointmentTime(e.target.value)}
+                      value={timeSlot}
+                      onChange={(e) => setTimeSlot(e.target.value)}
                       className="w-full bg-slate-950/60 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-yellow-400 transition"
                     >
                       {TIME_SLOTS.map((slot) => (
@@ -463,7 +493,7 @@ export default function BookingModal({
             <div className="space-y-5">
               
               {/* Review Info Card */}
-              <div className="bg-slate-950/70 border border-white/5 rounded-2xl p-4.5 space-y-3.5">
+              <div className="bg-slate-950/70 border border-white/5 rounded-2xl p-4 space-y-3.5">
                 <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center justify-between">
                   <span>Booking Review</span>
                   <span className="text-[10px] text-yellow-400 font-bold lowercase italic">instant dispatch active</span>
@@ -480,28 +510,28 @@ export default function BookingModal({
                   </div>
                   <div className="col-span-2">
                     <span className="text-[10px] text-slate-500 uppercase block font-bold">Service Location</span>
-                    <span className="font-semibold text-white block">{customerAddress}, {location}</span>
+                    <span className="font-semibold text-white block">{customerAddress}, {locationZone}</span>
                   </div>
                   <div>
                     <span className="text-[10px] text-slate-500 uppercase block font-bold">Visit Date</span>
-                    <span className="font-semibold text-white">{appointmentDate}</span>
+                    <span className="font-semibold text-white">{visitDate}</span>
                   </div>
                   <div>
                     <span className="text-[10px] text-slate-500 uppercase block font-bold">Visit Time</span>
-                    <span className="font-bold text-yellow-400">{appointmentTime}</span>
+                    <span className="font-bold text-yellow-400">{timeSlot}</span>
                   </div>
                 </div>
 
                 <div className="text-xs">
                   <span className="text-[10px] text-slate-500 uppercase block font-bold mb-0.5">Problem Details</span>
                   <p className="text-slate-300 bg-slate-900/50 p-2.5 rounded-lg border border-white/5 text-[11px] leading-relaxed italic">
-                    "{description}"
+                    &ldquo;{description}&rdquo;
                   </p>
                 </div>
               </div>
 
               {/* Coupon Section */}
-              <div className="bg-slate-955 border border-white/5 rounded-2xl p-4 space-y-3">
+              <div className="bg-slate-900 border border-white/5 rounded-2xl p-4 space-y-3">
                 <label className="block text-xs font-black text-slate-200 flex items-center gap-1.5">
                   <Ticket className="w-4 h-4 text-yellow-400" />
                   <span>Have a Promo Coupon?</span>
@@ -519,16 +549,17 @@ export default function BookingModal({
                     <button
                       type="button"
                       onClick={handleApplyCoupon}
-                      className="bg-yellow-400/10 hover:bg-yellow-400/20 border border-yellow-400/30 text-yellow-400 font-black text-xs px-4 py-2 rounded-xl transition shrink-0"
+                      disabled={couponLoading}
+                      className="bg-yellow-400/10 hover:bg-yellow-400/20 border border-yellow-400/30 text-yellow-400 font-black text-xs px-4 py-2 rounded-xl transition shrink-0 disabled:opacity-50"
                     >
-                      Apply
+                      {couponLoading ? "..." : "Apply"}
                     </button>
                   </div>
                 ) : (
                   <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-3 py-2">
                     <div>
                       <span className="text-emerald-400 text-xs font-black">✓ {couponCode}</span>
-                      <span className="text-emerald-300 text-[10px] ml-2 block sm:inline">{COUPONS[couponCode]?.desc}</span>
+                      <span className="text-emerald-300 text-[10px] ml-2 block sm:inline">{couponDesc}</span>
                     </div>
                     <button type="button" onClick={removeCoupon} className="text-rose-400 hover:text-rose-300 text-xs font-bold ml-2">× Remove</button>
                   </div>
@@ -537,7 +568,7 @@ export default function BookingModal({
               </div>
 
               {/* Payment Selector */}
-              <div className="bg-slate-955 border border-white/5 rounded-2xl p-4 space-y-3">
+              <div className="bg-slate-900 border border-white/5 rounded-2xl p-4 space-y-3">
                 <label className="block text-xs font-black text-slate-200 flex items-center gap-1.5">
                   <CreditCard className="w-4 h-4 text-yellow-400" />
                   <span>Choose Payment Method</span>
@@ -568,15 +599,15 @@ export default function BookingModal({
               </div>
 
               {/* Price Calculation Card */}
-              <div className="bg-slate-950/60 rounded-2xl border border-white/5 p-4.5 text-xs space-y-2">
+              <div className="bg-slate-950/60 rounded-2xl border border-white/5 p-4 text-xs space-y-2">
                 <div className="flex justify-between text-slate-400">
                   <span>Base Booking Charges</span>
                   <span>₹{actualBasePrice}</span>
                 </div>
                 {couponApplied && (
                   <div className="flex justify-between text-emerald-400">
-                    <span>Discount Coupon ({couponCode})</span>
-                    <span>-₹{couponDiscount}</span>
+                    <span>Discount Coupon ({couponCode}) {couponIsPercentage ? `(${couponDiscount}%)` : ""}</span>
+                    <span>-₹{couponDeducted}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-white font-black border-t border-white/10 pt-2.5 mt-2.5 text-sm">
@@ -590,7 +621,7 @@ export default function BookingModal({
                 <Sparkles className="w-6 h-6 text-yellow-400 animate-pulse shrink-0" />
                 <div className="space-y-0.5">
                   <p className="text-xs font-black">Dispatch Urgency Active</p>
-                  <p className="text-[10px] text-slate-350 leading-relaxed font-semibold">
+                  <p className="text-[10px] text-slate-400 leading-relaxed font-semibold">
                     A Tekton Expert will be dispatched to your location shortly.
                   </p>
                 </div>

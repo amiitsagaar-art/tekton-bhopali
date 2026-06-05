@@ -1,20 +1,22 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
-import { LogOut, Calendar, Users, FileCheck, CheckCircle, XCircle, AlertCircle, MapPin, Star, Trash2, Image as ImageIcon, UploadCloud, ShieldOff, Shield } from "lucide-react"
+import { LogOut, Calendar, Users, FileCheck, CheckCircle, XCircle, AlertCircle, MapPin, Star, Trash2, Image as ImageIcon, UploadCloud, ShieldOff, Shield, Tag, IndianRupee, Plus, ToggleLeft, ToggleRight } from "lucide-react"
 import Link from "next/link"
 import { auth } from "@/lib/firebase"
 import { onAuthStateChanged, signOut, User } from "firebase/auth"
 
 export default function AdminControlPanel() {
   // Tab selection
-  const [activeTab, setActiveTab] = useState<"bookings" | "workers" | "serviceAreas" | "reviews" | "recentWorks">("bookings")
+  const [activeTab, setActiveTab] = useState<"bookings" | "workers" | "serviceAreas" | "reviews" | "recentWorks" | "pricing">("bookings")
 
   // Auth states
   const [authUser, setAuthUser] = useState<User | null>(null)
   const [authLoading, setAuthLoading] = useState(true)
   const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL || ""
-  const ADMIN_TOKEN = "tekton-admin-9x7k2m4p-bhopal-2024"
+  // NOTE: Admin token is sent via header but should be stored in env only
+  // The actual secret lives in ADMIN_SECRET_TOKEN server-side env var
+  const ADMIN_TOKEN = process.env.NEXT_PUBLIC_ADMIN_TOKEN || ""
 
   // Helper to verify admin email
   const isAdmin = (email?: string | null) => {
@@ -110,6 +112,21 @@ export default function AdminControlPanel() {
   const [newZoneName, setNewZoneName] = useState("");
   const [isAddingZone, setIsAddingZone] = useState(false);
 
+  // ─── Pricing & Coupons State ───────────────────────────────────
+  const SERVICE_CATEGORIES = ["Plumbing", "Electrician", "Carpentry", "Painting", "Cleaning", "AC Repair", "Civil Work", "Home Tutors"];
+  const [servicePrices, setServicePrices] = useState<Record<string, number>>({});
+  const [editingPrices, setEditingPrices] = useState<Record<string, string>>({});
+  const [savingPrice, setSavingPrice] = useState<string | null>(null);
+
+  const [allCoupons, setAllCoupons] = useState<Array<{
+    id: number; code: string; discountValue: number;
+    isPercentage: boolean; description: string; isActive: boolean;
+  }>>([]);
+  const [newCoupon, setNewCoupon] = useState({
+    code: "", discountValue: "", isPercentage: false, description: ""
+  });
+  const [isAddingCoupon, setIsAddingCoupon] = useState(false);
+
   // Helper to mask Aadhaar numbers
   const maskAadhar = (aadhar?: string) => {
     if (!aadhar) return "[Aadhaar Redacted]"
@@ -119,24 +136,38 @@ export default function AdminControlPanel() {
 
   const fetchData = async () => {
     try {
-      const [bookRes, workerRes, areaRes, reviewRes, workRes] = await Promise.all([
+      const [bookRes, workerRes, areaRes, reviewRes, workRes, pricingRes, couponRes] = await Promise.all([
         fetch("/api/appointments"),
         fetch("/api/workers"),
         fetch("/api/service-areas"),
         fetch("/api/reviews"),
-        fetch("/api/recent-works")
+        fetch("/api/recent-works"),
+        fetch("/api/pricing"),
+        fetch("/api/coupons", { headers: adminHeaders }),
       ])
       const bookingsData = bookRes.ok ? await bookRes.json() : []
       const workersData = workerRes.ok ? await workerRes.json() : []
       const areaData = areaRes.ok ? await areaRes.json() : []
       const reviewsData = reviewRes.ok ? await reviewRes.json() : []
       const worksData = workRes.ok ? await workRes.json() : []
-      
+      const pricingData = pricingRes.ok ? await pricingRes.json() : { prices: {}, coupons: [] }
+      const couponsData = couponRes.ok ? await couponRes.json() : []
+
       setBookings(bookingsData)
       setWorkers(workersData)
       setServiceAreas(areaData)
       setReviews(reviewsData)
       setRecentWorks(worksData)
+      if (pricingData.prices) {
+        setServicePrices(pricingData.prices)
+        // Pre-fill editing inputs
+        const initialEdits: Record<string, string> = {}
+        Object.entries(pricingData.prices).forEach(([cat, price]) => {
+          initialEdits[cat] = String(price)
+        })
+        setEditingPrices(initialEdits)
+      }
+      setAllCoupons(Array.isArray(couponsData) ? couponsData : [])
     } catch (err) {
       console.error("Dashboard fetch error:", err)
     } finally {
@@ -263,6 +294,85 @@ export default function AdminControlPanel() {
       setIsPublishing(false);
     }
   }
+
+  // ─── Save a service price ──────────────────────────────────────
+  const handleSavePrice = async (category: string) => {
+    const val = Number(editingPrices[category]);
+    if (!val || val <= 0) { alert("Enter a valid price"); return; }
+    setSavingPrice(category);
+    try {
+      const res = await fetch("/api/pricing", {
+        method: "POST",
+        headers: adminHeaders,
+        body: JSON.stringify({ category, basePrice: val }),
+      });
+      if (res.ok) {
+        setServicePrices(prev => ({ ...prev, [category]: val }));
+        alert(`✅ Price for ${category} updated to ₹${val}`);
+      } else {
+        alert("Failed to save price");
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSavingPrice(null);
+    }
+  };
+
+  // ─── Add a new coupon ─────────────────────────────────────────
+  const handleAddCoupon = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCoupon.code || !newCoupon.discountValue) { alert("Fill all fields"); return; }
+    setIsAddingCoupon(true);
+    try {
+      const res = await fetch("/api/coupons", {
+        method: "POST",
+        headers: adminHeaders,
+        body: JSON.stringify({
+          code: newCoupon.code,
+          discountValue: Number(newCoupon.discountValue),
+          isPercentage: newCoupon.isPercentage,
+          description: newCoupon.description,
+        }),
+      });
+      if (res.ok) {
+        const created = await res.json();
+        setAllCoupons(prev => [created, ...prev]);
+        setNewCoupon({ code: "", discountValue: "", isPercentage: false, description: "" });
+      } else {
+        const err = await res.json();
+        alert(err.error || "Failed to create coupon");
+      }
+    } catch (e) { console.error(e); }
+    finally { setIsAddingCoupon(false); }
+  };
+
+  // ─── Toggle coupon active ─────────────────────────────────────
+  const handleToggleCoupon = async (id: number, current: boolean) => {
+    try {
+      const res = await fetch("/api/coupons", {
+        method: "PATCH",
+        headers: adminHeaders,
+        body: JSON.stringify({ id, isActive: !current }),
+      });
+      if (res.ok) {
+        setAllCoupons(prev => prev.map(c => c.id === id ? { ...c, isActive: !current } : c));
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  // ─── Delete coupon ────────────────────────────────────────────
+  const handleDeleteCoupon = async (id: number) => {
+    if (!confirm("Delete this coupon?")) return;
+    try {
+      const res = await fetch("/api/coupons", {
+        method: "DELETE",
+        headers: adminHeaders,
+        body: JSON.stringify({ id }),
+      });
+      if (res.ok) setAllCoupons(prev => prev.filter(c => c.id !== id));
+    } catch (e) { console.error(e); }
+  };
 
   // Badge rendering helper
   const getStatusBadge = (status: string) => {
@@ -481,6 +591,15 @@ export default function AdminControlPanel() {
           >
             Service Zones (Geofence)
             {activeTab === "serviceAreas" && (
+              <div className="absolute bottom-0 left-0 w-full h-0.5 bg-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.8)]" />
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab("pricing")}
+            className={`whitespace-nowrap pb-4 text-sm sm:text-base font-bold transition-all relative flex items-center gap-2 ${activeTab === "pricing" ? "text-yellow-400" : "text-slate-400 hover:text-slate-200"}`}
+          >
+            💰 Pricing & Coupons
+            {activeTab === "pricing" && (
               <div className="absolute bottom-0 left-0 w-full h-0.5 bg-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.8)]" />
             )}
           </button>
@@ -837,6 +956,175 @@ export default function AdminControlPanel() {
                   </tbody>
                 </table>
               </div>
+            </div>
+          ) : activeTab === "pricing" ? (
+            <div className="p-6 space-y-8">
+
+              {/* ── Service Pricing Section ── */}
+              <div>
+                <div className="flex items-center gap-2 mb-5">
+                  <IndianRupee className="w-5 h-5 text-yellow-400" />
+                  <h2 className="text-lg font-black text-white">Service Base Prices</h2>
+                  <span className="text-xs text-slate-500 ml-2">Changes reflect instantly on the booking modal</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {SERVICE_CATEGORIES.map(cat => (
+                    <div key={cat} className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">
+                          {cat === "Plumbing" ? "🔧" : cat === "Electrician" ? "⚡" : cat === "Carpentry" ? "🪵" : cat === "Painting" ? "🎨" : cat === "Cleaning" ? "🧹" : cat === "AC Repair" ? "❄️" : cat === "Civil Work" ? "🏗️" : "📚"}
+                        </span>
+                        <span className="text-sm font-bold text-white">{cat}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-500 text-sm font-bold">₹</span>
+                        <input
+                          type="number"
+                          min={1}
+                          value={editingPrices[cat] ?? servicePrices[cat] ?? ""}
+                          onChange={e => setEditingPrices(prev => ({ ...prev, [cat]: e.target.value }))}
+                          placeholder={String(servicePrices[cat] || 149)}
+                          className="flex-1 bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm font-mono outline-none focus:border-yellow-400 transition"
+                        />
+                        <button
+                          onClick={() => handleSavePrice(cat)}
+                          disabled={savingPrice === cat}
+                          className="bg-yellow-400 hover:bg-yellow-500 disabled:opacity-50 text-slate-950 font-black text-xs px-3 py-2 rounded-xl transition whitespace-nowrap"
+                        >
+                          {savingPrice === cat ? "Saving..." : "Save"}
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-slate-500">Current: ₹{servicePrices[cat] ?? "default"}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* ── Coupon Manager Section ── */}
+              <div>
+                <div className="flex items-center gap-2 mb-5">
+                  <Tag className="w-5 h-5 text-yellow-400" />
+                  <h2 className="text-lg font-black text-white">Coupon Manager</h2>
+                </div>
+
+                {/* Add New Coupon Form */}
+                <form onSubmit={handleAddCoupon} className="bg-slate-950 border border-slate-800 rounded-2xl p-5 mb-6 space-y-4">
+                  <h3 className="text-sm font-black text-white flex items-center gap-1.5"><Plus className="w-4 h-4 text-yellow-400" /> Add New Coupon</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block text-[10px] text-slate-400 font-bold uppercase mb-1">Coupon Code *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. SAVE50"
+                        value={newCoupon.code}
+                        onChange={e => setNewCoupon(p => ({ ...p, code: e.target.value.toUpperCase() }))}
+                        className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm font-mono outline-none focus:border-yellow-400 transition uppercase"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-400 font-bold uppercase mb-1">Discount Value *</label>
+                      <input
+                        type="number"
+                        required
+                        min={1}
+                        placeholder="e.g. 50"
+                        value={newCoupon.discountValue}
+                        onChange={e => setNewCoupon(p => ({ ...p, discountValue: e.target.value }))}
+                        className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm font-mono outline-none focus:border-yellow-400 transition"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-400 font-bold uppercase mb-1">Type</label>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => setNewCoupon(p => ({ ...p, isPercentage: false }))}
+                          className={`flex-1 py-2 rounded-xl text-xs font-bold border transition ${!newCoupon.isPercentage ? "bg-yellow-400 text-slate-950 border-yellow-400" : "bg-slate-900 text-slate-400 border-slate-700"}`}>
+                          ₹ Flat
+                        </button>
+                        <button type="button" onClick={() => setNewCoupon(p => ({ ...p, isPercentage: true }))}
+                          className={`flex-1 py-2 rounded-xl text-xs font-bold border transition ${newCoupon.isPercentage ? "bg-yellow-400 text-slate-950 border-yellow-400" : "bg-slate-900 text-slate-400 border-slate-700"}`}>
+                          % Off
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-400 font-bold uppercase mb-1">Description</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 50% off first booking"
+                        value={newCoupon.description}
+                        onChange={e => setNewCoupon(p => ({ ...p, description: e.target.value }))}
+                        className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm outline-none focus:border-yellow-400 transition"
+                      />
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={isAddingCoupon}
+                    className="bg-yellow-400 hover:bg-yellow-500 disabled:opacity-50 text-slate-950 font-black px-6 py-2.5 rounded-xl text-sm transition flex items-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" /> {isAddingCoupon ? "Creating..." : "Create Coupon"}
+                  </button>
+                </form>
+
+                {/* Existing Coupons Table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-950/50 text-slate-400 font-bold uppercase text-xs border-b border-slate-800">
+                      <tr>
+                        <th className="px-5 py-3">Code</th>
+                        <th className="px-5 py-3">Discount</th>
+                        <th className="px-5 py-3">Description</th>
+                        <th className="px-5 py-3">Status</th>
+                        <th className="px-5 py-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {allCoupons.length > 0 ? allCoupons.map(c => (
+                        <tr key={c.id} className="hover:bg-slate-800/30 transition-colors">
+                          <td className="px-5 py-3 font-mono font-black text-yellow-400">{c.code}</td>
+                          <td className="px-5 py-3 font-bold text-white">
+                            {c.isPercentage ? `${c.discountValue}% off` : `₹${c.discountValue} off`}
+                          </td>
+                          <td className="px-5 py-3 text-slate-400 text-xs">{c.description || "—"}</td>
+                          <td className="px-5 py-3">
+                            {c.isActive
+                              ? <span className="bg-emerald-500/20 text-emerald-400 px-3 py-1 rounded-full text-xs font-bold border border-emerald-500/30">Active</span>
+                              : <span className="bg-slate-500/20 text-slate-400 px-3 py-1 rounded-full text-xs font-bold border border-slate-500/30">Inactive</span>
+                            }
+                          </td>
+                          <td className="px-5 py-3 text-right space-x-2">
+                            <button
+                              onClick={() => handleToggleCoupon(c.id, c.isActive)}
+                              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition border ${
+                                c.isActive
+                                  ? "bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700"
+                                  : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
+                              }`}
+                            >
+                              {c.isActive ? <><ToggleLeft className="w-3.5 h-3.5" /> Disable</> : <><ToggleRight className="w-3.5 h-3.5" /> Enable</>}
+                            </button>
+                            <button
+                              onClick={() => handleDeleteCoupon(c.id)}
+                              className="inline-flex items-center gap-1 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 px-3 py-1.5 rounded-lg text-xs font-bold transition"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" /> Delete
+                            </button>
+                          </td>
+                        </tr>
+                      )) : (
+                        <tr>
+                          <td colSpan={5} className="px-5 py-12 text-center text-slate-500">
+                            <Tag className="w-8 h-8 mx-auto mb-3 opacity-50" />
+                            No coupons yet. Add one above!
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
             </div>
           ) : null}
         </div>

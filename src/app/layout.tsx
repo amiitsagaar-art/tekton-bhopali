@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Head from "next/head";
 import type { ReactNode } from "react";
 import "./globals.css";
 
@@ -47,14 +46,14 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <Head>
+      <head>
         <meta name="theme-color" content="#0f172a" />
         <link rel="manifest" href="/manifest.json" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content="Tekton Marketplace" />
         <link rel="apple-touch-icon" href="/icon-192x192.png" />
-      </Head>
+      </head>
       <body className="bg-slate-50 text-slate-900 antialiased w-full min-h-screen overflow-x-hidden">
         {children}
         <script

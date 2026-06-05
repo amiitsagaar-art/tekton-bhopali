@@ -86,7 +86,7 @@ export const recentWorks = pgTable("recent_works", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// NEW TABLE: Email OTPs
+// TABLE: Email OTPs (for authentication)
 export const emailOtps = pgTable("email_otps", {
   id: serial("id").primaryKey(),
   email: varchar("email", { length: 255 }).notNull().unique(),
@@ -95,3 +95,21 @@ export const emailOtps = pgTable("email_otps", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// TABLE: Service Pricing (Admin-Controlled per category)
+export const servicePricing = pgTable("service_pricing", {
+  id: serial("id").primaryKey(),
+  category: varchar("category", { length: 100 }).notNull().unique(),
+  basePrice: integer("base_price").notNull().default(149),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// TABLE: Admin-Managed Coupons
+export const coupons = pgTable("coupons", {
+  id: serial("id").primaryKey(),
+  code: varchar("code", { length: 50 }).notNull().unique(),
+  discountValue: integer("discount_value").notNull(),
+  isPercentage: boolean("is_percentage").notNull().default(false),
+  description: text("description"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
