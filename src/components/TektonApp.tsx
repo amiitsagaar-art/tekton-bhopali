@@ -364,8 +364,25 @@ export default function TektonApp() {
       try {
         await createUserWithEmailAndPassword(auth, email.trim(), "tekton-bhopal-secure-default-otp-password-2024");
       } catch (fbErr: any) {
-        if (fbErr.code === "auth/email-already-in-use") {
-          await signInWithEmailAndPassword(auth, email.trim(), "tekton-bhopal-secure-default-otp-password-2024");
+        if (fbErr.code === "auth/email-already-in-use" || fbErr.code === "auth/credential-already-in-use") {
+          try {
+            await signInWithEmailAndPassword(auth, email.trim(), "tekton-bhopal-secure-default-otp-password-2024");
+          } catch (signInErr: any) {
+            if (
+              signInErr.code === "auth/invalid-credential" || 
+              signInErr.code === "auth/wrong-password" || 
+              signInErr.message?.includes("invalid-credential")
+            ) {
+              const pass = prompt("Enter your account password (this email was registered with a custom password):");
+              if (pass) {
+                await signInWithEmailAndPassword(auth, email.trim(), pass);
+              } else {
+                throw new Error("Password authentication is required for this email.");
+              }
+            } else {
+              throw signInErr;
+            }
+          }
         } else {
           throw fbErr;
         }
