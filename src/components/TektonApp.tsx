@@ -266,6 +266,7 @@ export default function TektonApp() {
   const [loginRole, setLoginRole] = useState<"user" | "vendor">("user");
   const [authLoading, setAuthLoading] = useState(false);
   const [otpError, setOtpError] = useState("");
+  const [requiresPassword, setRequiresPassword] = useState(false);
 
 
   const handleFirebaseRegister = async () => {
@@ -362,23 +363,23 @@ export default function TektonApp() {
 
       // OTP Verified! Now sign in / create the Firebase Auth session
       try {
-        await createUserWithEmailAndPassword(auth, email.trim(), "tekton-bhopal-secure-default-otp-password-2024");
+        const passwordToUse = mode === "register" ? (registerPassword || "tekton-bhopal-secure-default-otp-password-2024") : (loginPasswordInput || "tekton-bhopal-secure-default-otp-password-2024");
+        await createUserWithEmailAndPassword(auth, email.trim(), passwordToUse);
       } catch (fbErr: any) {
         if (fbErr.code === "auth/email-already-in-use" || fbErr.code === "auth/credential-already-in-use") {
           try {
-            await signInWithEmailAndPassword(auth, email.trim(), "tekton-bhopal-secure-default-otp-password-2024");
+            const passwordToUse = mode === "register" ? (registerPassword || "tekton-bhopal-secure-default-otp-password-2024") : (loginPasswordInput || "tekton-bhopal-secure-default-otp-password-2024");
+            await signInWithEmailAndPassword(auth, email.trim(), passwordToUse);
           } catch (signInErr: any) {
             if (
               signInErr.code === "auth/invalid-credential" || 
               signInErr.code === "auth/wrong-password" || 
               signInErr.message?.includes("invalid-credential")
             ) {
-              const pass = prompt("Enter your account password (this email was registered with a custom password):");
-              if (pass) {
-                await signInWithEmailAndPassword(auth, email.trim(), pass);
-              } else {
-                throw new Error("Password authentication is required for this email.");
-              }
+              setRequiresPassword(true);
+              setAuthLoading(false);
+              setOtpError("This account uses a custom password. Please enter your password below to log in.");
+              return;
             } else {
               throw signInErr;
             }
@@ -2437,6 +2438,9 @@ export default function TektonApp() {
                 setOtpCode("");
                 setConfirmationResult(null);
                 setOtpError("");
+                setRequiresPassword(false);
+                setRegisterPassword("");
+                setLoginPasswordInput("");
               }}
               title="Close"
               aria-label="Close login modal"
@@ -2455,6 +2459,9 @@ export default function TektonApp() {
                     setOtpCode("");
                     setConfirmationResult(null);
                     setOtpError("");
+                    setRequiresPassword(false);
+                    setRegisterPassword("");
+                    setLoginPasswordInput("");
                   }}
                   className={`text-sm font-bold px-4 py-1.5 rounded-full transition ${ !isRegistering ? "bg-[#F8CB46] text-slate-900" : "text-slate-400 hover:text-white" } bg-white placeholder-slate-400`}
                 >
@@ -2467,6 +2474,9 @@ export default function TektonApp() {
                     setOtpCode("");
                     setConfirmationResult(null);
                     setOtpError("");
+                    setRequiresPassword(false);
+                    setRegisterPassword("");
+                    setLoginPasswordInput("");
                   }}
                   className={`text-sm font-bold px-4 py-1.5 rounded-full transition ${
                     isRegistering
@@ -2594,7 +2604,7 @@ export default function TektonApp() {
                           💡 Testing? You can bypass by entering OTP: <span className="font-extrabold text-amber-950 text-sm">123456</span>
                         </div>
                       </div>
-                      <div>
+                       <div>
                         <label className="block text-xs font-bold text-slate-600 mb-1">Enter 6-Digit OTP *</label>
                         <input
                           type="text"
@@ -2606,6 +2616,19 @@ export default function TektonApp() {
                           className="w-full border border-slate-300 px-4 py-3 rounded-xl text-center font-black tracking-widest text-lg focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition text-slate-900 bg-white placeholder-slate-400"
                         />
                       </div>
+
+                      {requiresPassword && (
+                        <div className="mt-3 animate-in fade-in slide-in-from-top-1 duration-200">
+                          <label className="block text-xs font-bold text-slate-600 mb-1">Account Password *</label>
+                          <input
+                            type="password"
+                            placeholder="Enter your account password"
+                            value={registerPassword}
+                            onChange={(e) => setRegisterPassword(e.target.value)}
+                            className="w-full border border-slate-300 px-4 py-3 rounded-xl text-center text-slate-900 bg-white placeholder-slate-400 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition"
+                          />
+                        </div>
+                      )}
                       
                       {otpError && (
                         <p className="text-rose-600 font-bold text-xs text-center">{otpError}</p>
@@ -2617,6 +2640,8 @@ export default function TektonApp() {
                             setIsOtpSent(false);
                             setOtpCode("");
                             setOtpError("");
+                            setRequiresPassword(false);
+                            setRegisterPassword("");
                           }}
                           disabled={authLoading}
                           className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3 py-2.5 rounded-xl transition border border-slate-300"
@@ -2771,6 +2796,19 @@ export default function TektonApp() {
                         />
                       </div>
 
+                      {requiresPassword && (
+                        <div className="mt-3 animate-in fade-in slide-in-from-top-1 duration-200">
+                          <label className="block text-xs font-bold text-slate-600 mb-1">Account Password *</label>
+                          <input
+                            type="password"
+                            placeholder="Enter your account password"
+                            value={loginPasswordInput}
+                            onChange={(e) => setLoginPasswordInput(e.target.value)}
+                            className="w-full border border-slate-300 px-4 py-3 rounded-xl text-center text-slate-900 bg-white placeholder-slate-400 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition"
+                          />
+                        </div>
+                      )}
+
                       {otpError && (
                         <p className="text-rose-600 font-bold text-xs text-center">{otpError}</p>
                       )}
@@ -2781,6 +2819,8 @@ export default function TektonApp() {
                             setIsOtpSent(false);
                             setOtpCode("");
                             setOtpError("");
+                            setRequiresPassword(false);
+                            setLoginPasswordInput("");
                           }}
                           disabled={authLoading}
                           className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3 py-2.5 rounded-xl transition border border-slate-300"
