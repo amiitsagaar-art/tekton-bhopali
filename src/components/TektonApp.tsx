@@ -343,7 +343,7 @@ export default function TektonApp() {
     }
   };
 
-  const handleVerifyOtp = async (code: string, email: string, mode: "login" | "register") => {
+  const handleVerifyOtp = async (code: string, email: string, mode: "login" | "register", skipFirebase = false) => {
     if (code.length !== 6) {
       setOtpError("Please enter a valid 6-digit OTP code.");
       return;
@@ -362,31 +362,35 @@ export default function TektonApp() {
       }
 
       // OTP Verified! Now sign in / create the Firebase Auth session
-      try {
-        const passwordToUse = mode === "register" ? (registerPassword || "tekton-bhopal-secure-default-otp-password-2024") : (loginPasswordInput || "tekton-bhopal-secure-default-otp-password-2024");
-        await createUserWithEmailAndPassword(auth, email.trim(), passwordToUse);
-      } catch (fbErr: any) {
-        console.warn("Firebase sign-up failed, falling back to sign-in:", fbErr);
+      if (!skipFirebase) {
         try {
           const passwordToUse = mode === "register" ? (registerPassword || "tekton-bhopal-secure-default-otp-password-2024") : (loginPasswordInput || "tekton-bhopal-secure-default-otp-password-2024");
-          await signInWithEmailAndPassword(auth, email.trim(), passwordToUse);
-        } catch (signInErr: any) {
-          const errCode = signInErr.code || "";
-          const errMsg = signInErr.message || "";
-          if (
-            errCode === "auth/invalid-credential" || 
-            errCode === "auth/wrong-password" || 
-            errMsg.includes("invalid-credential") || 
-            errMsg.includes("wrong-password")
-          ) {
-            setRequiresPassword(true);
-            setAuthLoading(false);
-            setOtpError("This account uses a custom password. Please enter your password below to log in.");
-            return;
-          } else {
-            throw signInErr;
+          await createUserWithEmailAndPassword(auth, email.trim(), passwordToUse);
+        } catch (fbErr: any) {
+          console.warn("Firebase sign-up failed, falling back to sign-in:", fbErr);
+          try {
+            const passwordToUse = mode === "register" ? (registerPassword || "tekton-bhopal-secure-default-otp-password-2024") : (loginPasswordInput || "tekton-bhopal-secure-default-otp-password-2024");
+            await signInWithEmailAndPassword(auth, email.trim(), passwordToUse);
+          } catch (signInErr: any) {
+            const errCode = signInErr.code || "";
+            const errMsg = signInErr.message || "";
+            if (
+              errCode === "auth/invalid-credential" || 
+              errCode === "auth/wrong-password" || 
+              errMsg.includes("invalid-credential") || 
+              errMsg.includes("wrong-password")
+            ) {
+              setRequiresPassword(true);
+              setAuthLoading(false);
+              setOtpError("This account uses a custom password. Please enter your password below to log in.");
+              return;
+            } else {
+              throw signInErr;
+            }
           }
         }
+      } else {
+        console.warn("Skipping Firebase Auth session creation. Proceeding with local session.");
       }
 
       if (mode === "register") {
@@ -2627,6 +2631,13 @@ export default function TektonApp() {
                             onChange={(e) => setRegisterPassword(e.target.value)}
                             className="w-full border border-slate-300 px-4 py-3 rounded-xl text-center text-slate-900 bg-white placeholder-slate-400 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition"
                           />
+                          <button
+                            type="button"
+                            onClick={() => handleVerifyOtp(otpCode, registerEmail, "register", true)}
+                            className="text-amber-600 hover:text-amber-500 font-bold text-xs underline mt-2 block mx-auto text-center"
+                          >
+                            ⚠️ Skip Password (Local Session Only)
+                          </button>
                         </div>
                       )}
                       
@@ -2806,6 +2817,13 @@ export default function TektonApp() {
                             onChange={(e) => setLoginPasswordInput(e.target.value)}
                             className="w-full border border-slate-300 px-4 py-3 rounded-xl text-center text-slate-900 bg-white placeholder-slate-400 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition"
                           />
+                          <button
+                            type="button"
+                            onClick={() => handleVerifyOtp(otpCode, loginEmailInput, "login", true)}
+                            className="text-amber-600 hover:text-amber-500 font-bold text-xs underline mt-2 block mx-auto text-center"
+                          >
+                            ⚠️ Skip Password (Local Session Only)
+                          </button>
                         </div>
                       )}
 

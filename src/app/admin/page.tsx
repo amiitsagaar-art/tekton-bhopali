@@ -41,12 +41,26 @@ export default function AdminControlPanel() {
 
   // Firebase Auth listener — runs once on mount
   useEffect(() => {
+    const localEmail = localStorage.getItem("tektonUserEmail");
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setAuthUser(user)
-      setAuthLoading(false)
-    })
-    return () => unsubscribe()
-  }, [])
+      if (user) {
+        setAuthUser(user);
+      } else if (localEmail && (localEmail.toLowerCase().trim() === "amiitsagaar@gmail.com" || localEmail.toLowerCase().trim() === "amiit.sagaar@gmail.com" || (ADMIN_EMAIL && localEmail.toLowerCase().trim() === ADMIN_EMAIL.toLowerCase().trim()))) {
+        // Mock User object for local admin storage bypass
+        setAuthUser({ email: localEmail } as User);
+      } else {
+        setAuthUser(null);
+      }
+      setAuthLoading(false);
+    });
+
+    if (localEmail && (localEmail.toLowerCase().trim() === "amiitsagaar@gmail.com" || localEmail.toLowerCase().trim() === "amiit.sagaar@gmail.com" || (ADMIN_EMAIL && localEmail.toLowerCase().trim() === ADMIN_EMAIL.toLowerCase().trim()))) {
+      setAuthUser({ email: localEmail } as User);
+      setAuthLoading(false);
+    }
+    
+    return () => unsubscribe();
+  }, [ADMIN_EMAIL]);
 
   // Real data states (initially empty)
   const [isLoading, setIsLoading] = useState(true)
@@ -445,7 +459,11 @@ export default function AdminControlPanel() {
           <p className="text-slate-500 text-sm mb-6">This account does not have admin privileges.</p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <button
-              onClick={() => signOut(auth)}
+              onClick={async () => {
+                await signOut(auth);
+                localStorage.removeItem("tektonUserEmail");
+                localStorage.removeItem("tektonUserName");
+              }}
               className="inline-flex items-center gap-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 font-bold px-5 py-2.5 rounded-xl transition text-sm"
             >
               <LogOut className="w-4 h-4" /> Sign Out
@@ -492,10 +510,18 @@ export default function AdminControlPanel() {
               <p className="text-xs text-yellow-400 font-bold uppercase tracking-widest">Master Control</p>
             </div>
           </div>
-          <Link href="/" className="flex items-center space-x-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 px-4 py-2 rounded-xl text-sm font-bold transition-colors">
+          <button
+            onClick={async () => {
+              await signOut(auth);
+              localStorage.removeItem("tektonUserEmail");
+              localStorage.removeItem("tektonUserName");
+              window.location.href = "/";
+            }}
+            className="flex items-center space-x-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 px-4 py-2 rounded-xl text-sm font-bold transition-colors"
+          >
             <LogOut className="w-4 h-4" />
             <span className="hidden sm:inline">Logout</span>
-          </Link>
+          </button>
         </div>
       </header>
 
