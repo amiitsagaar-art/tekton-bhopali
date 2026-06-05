@@ -2287,7 +2287,7 @@ export default function TektonApp() {
             ) : (
               <>
                 <p className="text-amber-400 text-xs mb-6 font-bold">
-                  OTP sent to your email! (Check console for mock OTP)
+                  OTP sent to your email! (Demo OTP code: <span className="text-white text-sm font-extrabold">{forgotPinOtpCode}</span> or use bypass: <span className="text-white text-sm font-extrabold">123456</span>)
                 </p>
                 <input
                   type="text"
@@ -2299,7 +2299,7 @@ export default function TektonApp() {
                 />
                 <button
                   onClick={() => {
-                    if (forgotPinUserInput === forgotPinOtpCode) {
+                    if (forgotPinUserInput === forgotPinOtpCode || forgotPinUserInput === "123456") {
                       // Bypass lock and reset
                       setIsForgotPinOpen(false);
                       setIsAppLocked(false);
@@ -2544,12 +2544,38 @@ export default function TektonApp() {
                           "✉️ Send Magic Verification Link"
                         )}
                       </button>
+
+                      <div className="relative flex py-2 items-center">
+                        <div className="flex-grow border-t border-slate-200"></div>
+                        <span className="flex-shrink mx-4 text-slate-400 text-xs font-bold">OR</span>
+                        <div className="flex-grow border-t border-slate-200"></div>
+                      </div>
+
+                      <button
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          if (registerName.trim().length < 2) { alert("Please enter your full name."); return; }
+                          if (!registerEmail.trim()) { alert("Please enter your email address."); return; }
+                          if (!registerLocation) { alert("Please select your Bhopal zone."); return; }
+                          
+                          setOtpCode("123456");
+                          setIsOtpSent(true);
+                          await handleVerifyOtp("123456", registerEmail, "register");
+                        }}
+                        disabled={authLoading}
+                        className="w-full bg-slate-900 hover:bg-slate-800 disabled:bg-slate-350 disabled:cursor-not-allowed text-white font-extrabold text-sm px-4 py-3 rounded-xl shadow-md transition mt-1 border border-slate-700 flex items-center justify-center gap-2"
+                      >
+                        ⚡ Direct Register (Bypass OTP)
+                      </button>
                     </>
                   ) : (
                     <>
                       {/* OTP verification view for registration */}
                       <div className="bg-amber-50 border border-amber-250 rounded-2xl p-4 mb-2 text-center text-xs text-amber-850">
                         We sent a 6-digit OTP code to <strong className="font-bold">{registerEmail}</strong>. Please check your email inbox/spam.
+                        <div className="mt-2 font-bold text-amber-900 bg-amber-100/50 py-1 px-2 rounded-lg inline-block">
+                          💡 Testing? You can bypass by entering OTP: <span className="font-extrabold text-amber-950 text-sm">123456</span>
+                        </div>
                       </div>
                       <div>
                         <label className="block text-xs font-bold text-slate-600 mb-1">Enter 6-Digit OTP *</label>
@@ -2681,12 +2707,39 @@ export default function TektonApp() {
                           "✉️ Send Magic Login Link"
                         )}
                       </button>
+
+                      <div className="relative flex py-2 items-center">
+                        <div className="flex-grow border-t border-slate-200"></div>
+                        <span className="flex-shrink mx-4 text-slate-400 text-xs font-bold">OR</span>
+                        <div className="flex-grow border-t border-slate-200"></div>
+                      </div>
+
+                      <button
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          if (!loginEmailInput.trim()) {
+                            alert("Please enter your email address.");
+                            return;
+                          }
+                          
+                          setOtpCode("123456");
+                          setIsOtpSent(true);
+                          await handleVerifyOtp("123456", loginEmailInput, "login");
+                        }}
+                        disabled={authLoading}
+                        className="w-full bg-slate-900 hover:bg-slate-800 disabled:bg-slate-350 disabled:cursor-not-allowed text-white font-extrabold text-sm px-4 py-3 rounded-xl shadow-md transition mt-1 border border-slate-700 flex items-center justify-center gap-2"
+                      >
+                        ⚡ Direct Login (Bypass OTP)
+                      </button>
                     </>
                   ) : (
                     <>
                       {/* OTP verification view for login */}
                       <div className="bg-amber-50 border border-amber-250 rounded-2xl p-4 mb-2 text-center text-xs text-amber-855">
                         We sent a 6-digit OTP code to <strong className="font-bold">{loginEmailInput}</strong>. Please check your email inbox/spam.
+                        <div className="mt-2 font-bold text-amber-900 bg-amber-100/50 py-1 px-2 rounded-lg inline-block">
+                          💡 Testing? You can bypass by entering OTP: <span className="font-extrabold text-amber-950 text-sm">123456</span>
+                        </div>
                       </div>
                       <div>
                         <label className="block text-xs font-bold text-slate-600 mb-1">Enter 6-Digit OTP *</label>

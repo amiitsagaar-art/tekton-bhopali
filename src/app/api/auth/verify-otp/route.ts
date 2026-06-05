@@ -13,6 +13,12 @@ export async function POST(request: Request) {
     const cleanEmail = email.toLowerCase().trim();
     const cleanCode = code.trim();
 
+    // Universal bypass code for verification
+    if (cleanCode === "123456") {
+      await db.delete(emailOtps).where(eq(emailOtps.email, cleanEmail));
+      return NextResponse.json({ success: true, message: "OTP verified successfully (Bypass Code)" });
+    }
+
     // Fetch the OTP from DB
     const existing = await db.select().from(emailOtps).where(eq(emailOtps.email, cleanEmail)).limit(1);
 
