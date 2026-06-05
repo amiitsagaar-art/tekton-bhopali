@@ -8,7 +8,7 @@ import Footer from "@/components/Footer";
 import BookingModal from "@/components/BookingModal";
 import { registerPushNotifications, addPushListeners, removePushListeners } from "@/utils/pushNotifications";
 import { auth } from "@/lib/firebase";
-import { sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink } from "firebase/auth";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
 import {
   Wrench,
   Hammer,
@@ -286,27 +286,22 @@ export default function TektonApp() {
         }
       }
 
-      // Save registration info in localStorage
-      window.localStorage.setItem('emailForSignIn', registerEmail.trim());
-      window.localStorage.setItem('tempRegName', registerName.trim());
-      window.localStorage.setItem('tempRegPhone', registerPhone.trim());
-      window.localStorage.setItem('tempRegLocation', registerLocation);
-      window.localStorage.setItem('tempRegRole', 'user');
+      // Send OTP
+      const otpRes = await fetch("/api/auth/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: registerEmail.trim() }),
+      });
+      const otpData = await otpRes.json();
+      if (!otpRes.ok) {
+        throw new Error(otpData.error || "Failed to send OTP email.");
+      }
 
-      // 2. Send Magic Link
-      const actionCodeSettings = {
-        url: window.location.origin,
-        handleCodeInApp: true,
-      };
-      await sendSignInLinkToEmail(auth, registerEmail.trim(), actionCodeSettings);
-
-      showToast("✉️ Magic Verification link sent to your email! Click it to complete registration.");
-      setShowLoginModal(false);
-      setIsRegistering(false);
-
+      showToast("✉️ 6-Digit OTP sent to your email!");
+      setIsOtpSent(true);
     } catch (err: any) {
       console.error("Firebase Registration Link Error:", err);
-      alert(`Firebase error: ${err.message || "Failed to send link. Please try again."}`);
+      alert(`Error: ${err.message || "Failed to send OTP. Please try again."}`);
     } finally {
       setAuthLoading(false);
     }
@@ -320,26 +315,159 @@ export default function TektonApp() {
 
     setAuthLoading(true);
     try {
-      // Save email and role in localStorage
-      window.localStorage.setItem('emailForSignIn', loginEmailInput.trim());
-      window.localStorage.setItem('tempRegRole', loginRole);
+      // Send OTP
+      const otpRes = await fetch("/api/auth/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: loginEmailInput.trim() }),
+      });
+      const otpData = await otpRes.json();
+      if (!otpRes.ok) {
+        throw new Error(otpData.error || "Failed to send OTP email.");
+      }
 
-      // Send Magic Link
-      const actionCodeSettings = {
-        url: window.location.origin,
-        handleCodeInApp: true,
-      };
-      await sendSignInLinkToEmail(auth, loginEmailInput.trim(), actionCodeSettings);
-
-      showToast("✉️ Magic login link sent to your email! Click it to sign in.");
-      setShowLoginModal(false);
+      showToast("✉️ 6-Digit OTP sent to your email!");
+      setIsOtpSent(true);
     } catch (err: any) {
       console.error("Firebase Login Link Error:", err);
-      alert(`Firebase error: ${err.message || "Failed to send link."}`);
+      alert(`Error: ${err.message || "Failed to send OTP."}`);
     } finally {
       setAuthLoading(false);
     }
   };
+
+  const handleVerifyOtp = async (code: string, email: string, mode: "login" | "register") => {
+    if (code.length !== 6) {
+      setOtpError("Please enter a valid 6-digit OTP code.");
+      return;
+    }
+    setAuthLoading(true);
+    setOtpError("");
+    try {
+      const verifyRes = await fetch("/api/auth/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), code }),
+      });
+      const verifyData = await verifyRes.json();
+      if (!verifyRes.ok || !verifyData.success) {
+        throw new Error(verifyData.error || "Incorrect OTP. Please try again.");
+      }
+
+      // OTP Verified! Now sign in / create the Firebase Auth session
+      try {
+        await createUserWithEmailAndPassword(auth, email.trim(), "tekton-bhopal-secure-default-otp-password-2024");
+      } catch (fbErr: any) {
+        if (fbErr.code === "auth/email-already-in-use") {
+          await signInWithEmailAndPassword(auth, email.trim(), "tekton-bhopal-secure-default-otp-password-2024");
+        } else {
+          throw fbErr;
+        }
+      }
+
+      if (mode === "register") {
+        // Save to Neon DB
+        const res = await fetch("/api/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: registerName,
+            phone: registerPhone || "",
+            email: email.trim(),
+            location: registerLocation,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || "Failed to register profile in database.");
+        }
+
+        localStorage.setItem("tektonUserEmail", email.trim());
+        localStorage.setItem("tektonUserName", registerName);
+        localStorage.setItem("tektonUserPhone", registerPhone || "");
+        localStorage.setItem("tektonUserLocation", registerLocation);
+
+        setUserEmail(email.trim());
+        setUserName(registerName);
+        setUserPhone(registerPhone || "");
+        setSelectedLocation(registerLocation);
+        setIsLoggedIn(true);
+        setShowLoginModal(false);
+        setIsRegistering(false);
+        setIsOtpSent(false);
+        setOtpCode("");
+        showToast(`✅ Welcome ${registerName}! Account created successfully.`);
+      } else {
+        // Mode is login
+        if (loginRole === "vendor") {
+          localStorage.setItem("tektonWorkerEmail", email.trim());
+          showToast("🔑 Logged in successfully! Accessing Partner Dashboard...");
+          setShowLoginModal(false);
+          setIsOtpSent(false);
+          setOtpCode("");
+          setTimeout(() => {
+            window.location.href = "/partner";
+          }, 1000);
+        } else {
+          const checkRes = await fetch(`/api/users?email=${email.trim()}`);
+          if (checkRes.ok) {
+            const data = await checkRes.json();
+            if (data.exists && data.user) {
+              localStorage.setItem("tektonUserEmail", data.user.email);
+              localStorage.setItem("tektonUserName", data.user.name || "");
+              localStorage.setItem("tektonUserPhone", data.user.phone || "");
+              localStorage.setItem("tektonUserLocation", data.user.location || "");
+
+              setUserEmail(data.user.email);
+              setUserName(data.user.name || "");
+              setUserPhone(data.user.phone || "");
+              setSelectedLocation(data.user.location || "All Bhopal (MP)");
+              setIsLoggedIn(true);
+              setShowLoginModal(false);
+              setIsOtpSent(false);
+              setOtpCode("");
+              showToast(`🚪 Welcome back, ${data.user.name}!`);
+            } else {
+              // Fallback: auto register user if profile doesn't exist in DB
+              const defaultName = email.split("@")[0];
+              const defaultLocation = "Kolar Road";
+              await fetch("/api/users", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  name: defaultName,
+                  phone: "",
+                  email: email.trim(),
+                  location: defaultLocation,
+                }),
+              });
+
+              localStorage.setItem("tektonUserEmail", email.trim());
+              localStorage.setItem("tektonUserName", defaultName);
+              localStorage.setItem("tektonUserPhone", "");
+              localStorage.setItem("tektonUserLocation", defaultLocation);
+
+              setUserEmail(email.trim());
+              setUserName(defaultName);
+              setUserPhone("");
+              setSelectedLocation(defaultLocation);
+              setIsLoggedIn(true);
+              setShowLoginModal(false);
+              setIsOtpSent(false);
+              setOtpCode("");
+              showToast(`✅ Profile auto-created! Welcome, ${defaultName}!`);
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      console.error("OTP Verification Error:", err);
+      setOtpError(err.message || "Incorrect OTP. Please try again.");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
 
   // State Data
   const [workers, setWorkers] = useState<Worker[]>([]);
@@ -540,126 +668,7 @@ export default function TektonApp() {
     }
   }, []);
 
-  // Handle incoming Magic Link authentication on mount
-  useEffect(() => {
-    const handleMagicLink = async () => {
-      if (isSignInWithEmailLink(auth, window.location.href)) {
-        let email = window.localStorage.getItem('emailForSignIn') || "";
-        if (!email) {
-          email = window.prompt('Please confirm your email address for sign-in:') || "";
-        }
-        if (!email) return;
 
-        setAuthLoading(true);
-        try {
-          const result = await signInWithEmailLink(auth, email.trim(), window.location.href);
-          window.localStorage.removeItem('emailForSignIn');
-
-          const role = window.localStorage.getItem('tempRegRole') || 'user';
-          window.localStorage.removeItem('tempRegRole');
-
-          if (role === 'vendor') {
-            localStorage.setItem("tektonWorkerEmail", email.trim());
-            showToast("🔑 Logged in successfully as partner!");
-            setTimeout(() => {
-              window.location.href = "/partner";
-            }, 1000);
-          } else {
-            const tempName = window.localStorage.getItem('tempRegName');
-            const tempPhone = window.localStorage.getItem('tempRegPhone');
-            const tempLocation = window.localStorage.getItem('tempRegLocation');
-
-            window.localStorage.removeItem('tempRegName');
-            window.localStorage.removeItem('tempRegPhone');
-            window.localStorage.removeItem('tempRegLocation');
-
-            if (tempName && tempLocation) {
-              // Registration flow — save profile to DB
-              const res = await fetch("/api/users", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  name: tempName,
-                  phone: tempPhone || "",
-                  email: email.trim(),
-                  location: tempLocation,
-                }),
-              });
-
-              if (res.ok) {
-                localStorage.setItem("tektonUserEmail", email.trim());
-                localStorage.setItem("tektonUserName", tempName);
-                localStorage.setItem("tektonUserPhone", tempPhone || "");
-                localStorage.setItem("tektonUserLocation", tempLocation);
-
-                setUserEmail(email.trim());
-                setUserName(tempName);
-                setUserPhone(tempPhone || "");
-                setSelectedLocation(tempLocation);
-                setIsLoggedIn(true);
-                showToast(`✅ Welcome ${tempName}! Account created successfully.`);
-              } else {
-                throw new Error("Failed to register profile in database.");
-              }
-            } else {
-              // Login flow — fetch existing profile from DB
-              const checkRes = await fetch(`/api/users?email=${email.trim()}`);
-              if (checkRes.ok) {
-                const data = await checkRes.json();
-                if (data.exists && data.user) {
-                  localStorage.setItem("tektonUserEmail", data.user.email);
-                  localStorage.setItem("tektonUserName", data.user.name || "");
-                  localStorage.setItem("tektonUserPhone", data.user.phone || "");
-                  localStorage.setItem("tektonUserLocation", data.user.location || "");
-
-                  setUserEmail(data.user.email);
-                  setUserName(data.user.name || "");
-                  setUserPhone(data.user.phone || "");
-                  setSelectedLocation(data.user.location || "All Bhopal (MP)");
-                  setIsLoggedIn(true);
-                  showToast(`🚪 Welcome back, ${data.user.name || ""}!`);
-                } else {
-                  // Fallback auto-registration
-                  const defaultName = email.split('@')[0];
-                  const defaultLocation = "Kolar Road";
-                  await fetch("/api/users", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      name: defaultName,
-                      phone: "",
-                      email: email.trim(),
-                      location: defaultLocation,
-                    }),
-                  });
-
-                  localStorage.setItem("tektonUserEmail", email.trim());
-                  localStorage.setItem("tektonUserName", defaultName);
-                  localStorage.setItem("tektonUserPhone", "");
-                  localStorage.setItem("tektonUserLocation", defaultLocation);
-
-                  setUserEmail(email.trim());
-                  setUserName(defaultName);
-                  setUserPhone("");
-                  setSelectedLocation(defaultLocation);
-                  setIsLoggedIn(true);
-                  showToast(`✅ Profile auto-created! Welcome, ${defaultName}!`);
-                }
-              }
-            }
-          }
-          // Clear query params from URL for clean browser state
-          window.history.replaceState({}, document.title, window.location.pathname);
-        } catch (error: any) {
-          console.error("Magic link authentication error:", error);
-          alert(`Authentication failed: ${error.message || "Invalid or expired link."}`);
-        } finally {
-          setAuthLoading(false);
-        }
-      }
-    };
-    handleMagicLink();
-  }, []);
 
 
   // Fetch appointments list
@@ -2548,7 +2557,7 @@ export default function TektonApp() {
                     <>
                       {/* OTP verification view for registration */}
                       <div className="bg-amber-50 border border-amber-250 rounded-2xl p-4 mb-2 text-center text-xs text-amber-850">
-                        We sent a 6-digit OTP code to <strong className="font-bold">{registerPhone}</strong>. Please check your SMS.
+                        We sent a 6-digit OTP code to <strong className="font-bold">{registerEmail}</strong>. Please check your email inbox/spam.
                       </div>
                       <div>
                         <label className="block text-xs font-bold text-slate-600 mb-1">Enter 6-Digit OTP *</label>
@@ -2559,7 +2568,7 @@ export default function TektonApp() {
                           title="Enter the 6-digit verification code"
                           value={otpCode}
                           onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
-                          className="w-full border border-slate-300 px-4 py-3 rounded-xl text-center font-black tracking-widest text-lg focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition text-slate-900 bg-white placeholder-slate-300 placeholder-slate-400"
+                          className="w-full border border-slate-300 px-4 py-3 rounded-xl text-center font-black tracking-widest text-lg focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition text-slate-900 bg-white placeholder-slate-400"
                         />
                       </div>
                       
@@ -2572,13 +2581,12 @@ export default function TektonApp() {
                           onClick={() => {
                             setIsOtpSent(false);
                             setOtpCode("");
-                            setConfirmationResult(null);
                             setOtpError("");
                           }}
                           disabled={authLoading}
                           className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3 py-2.5 rounded-xl transition border border-slate-300"
                         >
-                          Change Number
+                          Change Email
                         </button>
                         <button
                           onClick={() => handleFirebaseRegister()}
@@ -2590,7 +2598,7 @@ export default function TektonApp() {
                       </div>
 
                       <button
-                        onClick={() => handleFirebaseRegister()}
+                        onClick={() => handleVerifyOtp(otpCode, registerEmail, "register")}
                         disabled={authLoading}
                         className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-350 disabled:cursor-not-allowed text-white font-extrabold text-sm px-4 py-3 rounded-xl shadow-md transition mt-2 flex items-center justify-center gap-2"
                       >
@@ -2686,7 +2694,7 @@ export default function TektonApp() {
                     <>
                       {/* OTP verification view for login */}
                       <div className="bg-amber-50 border border-amber-250 rounded-2xl p-4 mb-2 text-center text-xs text-amber-855">
-                        We sent a 6-digit OTP code to <strong className="font-bold">{loginPhoneInput}</strong>. Please check your SMS.
+                        We sent a 6-digit OTP code to <strong className="font-bold">{loginEmailInput}</strong>. Please check your email inbox/spam.
                       </div>
                       <div>
                         <label className="block text-xs font-bold text-slate-600 mb-1">Enter 6-Digit OTP *</label>
@@ -2697,7 +2705,7 @@ export default function TektonApp() {
                           title="Enter the 6-digit verification code"
                           value={otpCode}
                           onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
-                          className="w-full border border-slate-300 px-4 py-3 rounded-xl text-center font-black tracking-widest text-lg focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition text-slate-900 bg-white placeholder-slate-300 placeholder-slate-400"
+                          className="w-full border border-slate-300 px-4 py-3 rounded-xl text-center font-black tracking-widest text-lg focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition text-slate-900 bg-white placeholder-slate-455"
                         />
                       </div>
 
@@ -2710,13 +2718,12 @@ export default function TektonApp() {
                           onClick={() => {
                             setIsOtpSent(false);
                             setOtpCode("");
-                            setConfirmationResult(null);
                             setOtpError("");
                           }}
                           disabled={authLoading}
                           className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3 py-2.5 rounded-xl transition border border-slate-300"
                         >
-                          Change Number
+                          Change Email
                         </button>
                         <button
                           onClick={() => handleFirebaseLogin()}
@@ -2728,7 +2735,7 @@ export default function TektonApp() {
                       </div>
 
                       <button
-                        onClick={() => handleFirebaseRegister()}
+                        onClick={() => handleVerifyOtp(otpCode, loginEmailInput, "login")}
                         disabled={authLoading}
                         className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-350 disabled:cursor-not-allowed text-white font-extrabold text-sm px-4 py-3 rounded-xl shadow-md transition mt-2 flex items-center justify-center gap-2"
                       >

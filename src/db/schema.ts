@@ -85,3 +85,13 @@ export const recentWorks = pgTable("recent_works", {
   imageUrl: text("image_url").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// NEW TABLE: Email OTPs
+export const emailOtps = pgTable("email_otps", {
+  id: serial("id").primaryKey(),
+  email: varchar("email", { length: 255 }).notNull().unique(),
+  code: varchar("code", { length: 10 }).notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
