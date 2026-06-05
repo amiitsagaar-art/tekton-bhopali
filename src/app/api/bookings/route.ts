@@ -26,6 +26,8 @@ export async function POST(request: Request) {
       appointmentDate: data.appointmentDate || "",
       appointmentTime: data.appointmentTime || "",
       status: "Pending",
+      transactionId: data.transactionId || null,
+      paymentStatus: data.transactionId ? "Paid" : "Pending",
     }).returning();
 
     return NextResponse.json(inserted[0], { status: 201 });

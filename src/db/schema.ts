@@ -35,6 +35,7 @@ export const appointments = pgTable("appointments", {
   status: varchar("status", { length: 50 }).notNull().default("Pending"),
   paymentStatus: varchar("payment_status", { length: 50 }).notNull().default("Pending"), // Added for refund logic
   cancellationReason: text("cancellation_reason"), // Added for cancellation tracking
+  transactionId: varchar("transaction_id", { length: 255 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -90,6 +91,15 @@ export const recentWorks = pgTable("recent_works", {
 export const emailOtps = pgTable("email_otps", {
   id: serial("id").primaryKey(),
   email: varchar("email", { length: 255 }).notNull().unique(),
+  code: varchar("code", { length: 10 }).notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// TABLE: Phone OTPs (for mobile SMS verification)
+export const phoneOtps = pgTable("phone_otps", {
+  id: serial("id").primaryKey(),
+  phone: varchar("phone", { length: 20 }).notNull().unique(),
   code: varchar("code", { length: 10 }).notNull(),
   expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),

@@ -271,40 +271,42 @@ export default function TektonApp() {
 
   const handleFirebaseRegister = async () => {
     if (registerName.trim().length < 2) { alert("Please enter your full name."); return; }
-    if (!registerEmail.trim()) { alert("Email address is required."); return; }
+    const phone = registerPhone.replace(/\D/g, "");
+    if (phone.length !== 10) { alert("Please enter a valid 10-digit mobile number."); return; }
     if (!registerLocation) { alert("Please select your Bhopal zone."); return; }
     
     setAuthLoading(true);
     try {
-      // 1. Check if user already exists in our DB
-      const checkRes = await fetch(`/api/users?email=${registerEmail.trim()}`);
+      const mockEmail = `${phone}@tektonbhopal.com`;
+      // Check if user already exists in DB
+      const checkRes = await fetch(`/api/users?email=${mockEmail}`);
       if (checkRes.ok) {
         const data = await checkRes.json();
         if (data.exists && data.user) {
-          alert("⚠️ A user is already registered with this email. Please login instead.");
+          alert("⚠️ A user is already registered with this mobile number. Please login instead.");
           setAuthLoading(false);
           return;
         }
       }
 
-      // Send OTP
-      const otpRes = await fetch("/api/auth/send-otp", {
+      // Send OTP via SMS
+      const otpRes = await fetch("/api/auth/send-sms-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: registerEmail.trim() }),
+        body: JSON.stringify({ mobileNumber: phone }),
       });
       const otpData = await otpRes.json();
       if (!otpRes.ok) {
-        throw new Error(otpData.error || "Failed to send OTP email.");
+        throw new Error(otpData.error || "Failed to send OTP.");
       }
 
       if (otpData.otp) {
         alert(`[Mock Mode] Your OTP verification code is: ${otpData.otp}`);
       }
-      showToast("✉️ 6-Digit OTP sent to your email!");
+      showToast("📱 6-Digit OTP sent to your phone!");
       setIsOtpSent(true);
     } catch (err: any) {
-      console.error("Firebase Registration Link Error:", err);
+      console.error("SMS Registration Error:", err);
       alert(`Error: ${err.message || "Failed to send OTP. Please try again."}`);
     } finally {
       setAuthLoading(false);
@@ -312,38 +314,58 @@ export default function TektonApp() {
   };
 
   const handleFirebaseLogin = async () => {
-    if (!loginEmailInput.trim()) {
-      alert("Please enter your email address.");
+    const phone = loginPhoneInput.replace(/\D/g, "");
+    if (phone.length !== 10) {
+      alert("Please enter a valid 10-digit mobile number.");
       return;
     }
 
     setAuthLoading(true);
     try {
-      // Send OTP
-      const otpRes = await fetch("/api/auth/send-otp", {
+      // If logging in as vendor, verify they are registered first
+      if (loginRole === "vendor") {
+        const workersRes = await fetch("/api/workers");
+        const allWorkers = await workersRes.json();
+        const partner = allWorkers.find((w: any) => w.phone === phone);
+        if (!partner) {
+          alert("⚠️ This mobile number is not registered as a Partner.");
+          setAuthLoading(false);
+          return;
+        }
+        
+        const partnerStatus = partner.status?.toLowerCase();
+        if (partnerStatus === "pending" || partnerStatus === "rejected") {
+          alert(`Your partner application is currently ${partner.status}. Please wait for admin approval.`);
+          setAuthLoading(false);
+          return;
+        }
+      }
+
+      // Send OTP via SMS
+      const otpRes = await fetch("/api/auth/send-sms-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: loginEmailInput.trim() }),
+        body: JSON.stringify({ mobileNumber: phone }),
       });
       const otpData = await otpRes.json();
       if (!otpRes.ok) {
-        throw new Error(otpData.error || "Failed to send OTP email.");
+        throw new Error(otpData.error || "Failed to send OTP.");
       }
 
       if (otpData.otp) {
         alert(`[Mock Mode] Your OTP verification code is: ${otpData.otp}`);
       }
-      showToast("✉️ 6-Digit OTP sent to your email!");
+      showToast("📱 6-Digit OTP sent to your phone!");
       setIsOtpSent(true);
     } catch (err: any) {
-      console.error("Firebase Login Link Error:", err);
+      console.error("SMS Login Error:", err);
       alert(`Error: ${err.message || "Failed to send OTP."}`);
     } finally {
       setAuthLoading(false);
     }
   };
 
-  const handleVerifyOtp = async (code: string, email: string, mode: "login" | "register", skipFirebase = false) => {
+  const handleVerifyOtp = async (code: string, phoneOrEmail: string, mode: "login" | "register", skipFirebase = false) => {
     if (code.length !== 6) {
       setOtpError("Please enter a valid 6-digit OTP code.");
       return;
@@ -351,26 +373,32 @@ export default function TektonApp() {
     setAuthLoading(true);
     setOtpError("");
     try {
-      const verifyRes = await fetch("/api/auth/verify-otp", {
+      // Extract numeric phone number. If it contains @, parse it, otherwise use clean string.
+      const cleanPhone = phoneOrEmail.includes("@") ? phoneOrEmail.split("@")[0].replace(/\D/g, "") : phoneOrEmail.replace(/\D/g, "");
+      const mockEmail = `${cleanPhone}@tektonbhopal.com`;
+
+      const verifyRes = await fetch("/api/auth/verify-sms-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), code }),
+        body: JSON.stringify({ mobileNumber: cleanPhone, otp: code }),
       });
       const verifyData = await verifyRes.json();
       if (!verifyRes.ok || !verifyData.success) {
         throw new Error(verifyData.error || "Incorrect OTP. Please try again.");
       }
 
+      const verifiedUser = verifyData.user;
+
       // OTP Verified! Now sign in / create the Firebase Auth session
       if (!skipFirebase) {
         try {
           const passwordToUse = mode === "register" ? (registerPassword || "tekton-bhopal-secure-default-otp-password-2024") : (loginPasswordInput || "tekton-bhopal-secure-default-otp-password-2024");
-          await createUserWithEmailAndPassword(auth, email.trim(), passwordToUse);
+          await createUserWithEmailAndPassword(auth, mockEmail, passwordToUse);
         } catch (fbErr: any) {
           console.warn("Firebase sign-up failed, falling back to sign-in:", fbErr);
           try {
             const passwordToUse = mode === "register" ? (registerPassword || "tekton-bhopal-secure-default-otp-password-2024") : (loginPasswordInput || "tekton-bhopal-secure-default-otp-password-2024");
-            await signInWithEmailAndPassword(auth, email.trim(), passwordToUse);
+            await signInWithEmailAndPassword(auth, mockEmail, passwordToUse);
           } catch (signInErr: any) {
             const errCode = signInErr.code || "";
             const errMsg = signInErr.message || "";
@@ -394,41 +422,26 @@ export default function TektonApp() {
       }
 
       if (mode === "register") {
-        // Save to Neon DB
-        const res = await fetch("/api/users", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: registerName,
-            phone: registerPhone || "",
-            email: email.trim(),
-            location: registerLocation,
-          }),
-        });
-        if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.error || "Failed to register profile in database.");
-        }
+        localStorage.setItem("tektonUserEmail", verifiedUser.email);
+        localStorage.setItem("tektonUserName", verifiedUser.name);
+        localStorage.setItem("tektonUserPhone", verifiedUser.phone || "");
+        localStorage.setItem("tektonUserLocation", verifiedUser.location);
 
-        localStorage.setItem("tektonUserEmail", email.trim());
-        localStorage.setItem("tektonUserName", registerName);
-        localStorage.setItem("tektonUserPhone", registerPhone || "");
-        localStorage.setItem("tektonUserLocation", registerLocation);
-
-        setUserEmail(email.trim());
-        setUserName(registerName);
-        setUserPhone(registerPhone || "");
-        setSelectedLocation(registerLocation);
+        setUserEmail(verifiedUser.email);
+        setUserName(verifiedUser.name);
+        setUserPhone(verifiedUser.phone || "");
+        setSelectedLocation(verifiedUser.location);
         setIsLoggedIn(true);
         setShowLoginModal(false);
         setIsRegistering(false);
         setIsOtpSent(false);
         setOtpCode("");
-        showToast(`✅ Welcome ${registerName}! Account created successfully.`);
+        showToast(`✅ Welcome ${verifiedUser.name}! Account created successfully.`);
       } else {
         // Mode is login
         if (loginRole === "vendor") {
-          localStorage.setItem("tektonWorkerEmail", email.trim());
+          localStorage.setItem("tektonWorkerEmail", mockEmail);
+          localStorage.setItem("tektonWorkerPhone", cleanPhone);
           showToast("🔑 Logged in successfully! Accessing Partner Dashboard...");
           setShowLoginModal(false);
           setIsOtpSent(false);
@@ -437,55 +450,20 @@ export default function TektonApp() {
             window.location.href = "/partner";
           }, 1000);
         } else {
-          const checkRes = await fetch(`/api/users?email=${email.trim()}`);
-          if (checkRes.ok) {
-            const data = await checkRes.json();
-            if (data.exists && data.user) {
-              localStorage.setItem("tektonUserEmail", data.user.email);
-              localStorage.setItem("tektonUserName", data.user.name || "");
-              localStorage.setItem("tektonUserPhone", data.user.phone || "");
-              localStorage.setItem("tektonUserLocation", data.user.location || "");
+          localStorage.setItem("tektonUserEmail", verifiedUser.email);
+          localStorage.setItem("tektonUserName", verifiedUser.name || "");
+          localStorage.setItem("tektonUserPhone", verifiedUser.phone || "");
+          localStorage.setItem("tektonUserLocation", verifiedUser.location || "");
 
-              setUserEmail(data.user.email);
-              setUserName(data.user.name || "");
-              setUserPhone(data.user.phone || "");
-              setSelectedLocation(data.user.location || "All Bhopal (MP)");
-              setIsLoggedIn(true);
-              setShowLoginModal(false);
-              setIsOtpSent(false);
-              setOtpCode("");
-              showToast(`🚪 Welcome back, ${data.user.name}!`);
-            } else {
-              // Fallback: auto register user if profile doesn't exist in DB
-              const defaultName = email.split("@")[0];
-              const defaultLocation = "Kolar Road";
-              await fetch("/api/users", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  name: defaultName,
-                  phone: "",
-                  email: email.trim(),
-                  location: defaultLocation,
-                }),
-              });
-
-              localStorage.setItem("tektonUserEmail", email.trim());
-              localStorage.setItem("tektonUserName", defaultName);
-              localStorage.setItem("tektonUserPhone", "");
-              localStorage.setItem("tektonUserLocation", defaultLocation);
-
-              setUserEmail(email.trim());
-              setUserName(defaultName);
-              setUserPhone("");
-              setSelectedLocation(defaultLocation);
-              setIsLoggedIn(true);
-              setShowLoginModal(false);
-              setIsOtpSent(false);
-              setOtpCode("");
-              showToast(`✅ Profile auto-created! Welcome, ${defaultName}!`);
-            }
-          }
+          setUserEmail(verifiedUser.email);
+          setUserName(verifiedUser.name || "");
+          setUserPhone(verifiedUser.phone || "");
+          setSelectedLocation(verifiedUser.location || "All Bhopal (MP)");
+          setIsLoggedIn(true);
+          setShowLoginModal(false);
+          setIsOtpSent(false);
+          setOtpCode("");
+          showToast(`🚪 Welcome back, ${verifiedUser.name}!`);
         }
       }
     } catch (err: any) {
@@ -2518,25 +2496,16 @@ export default function TektonApp() {
                           className="w-full border border-slate-300 px-4 py-3 rounded-xl text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition text-slate-900 bg-white placeholder-slate-400"
                         />
                       </div>
+
                       <div>
-                        <label className="block text-xs font-bold text-slate-600 mb-1">Mobile Number (Optional)</label>
+                        <label className="block text-xs font-bold text-slate-600 mb-1">Mobile Number *</label>
                         <input
                           type="tel"
                           placeholder="10-digit number e.g. 9876543210"
+                          maxLength={10}
                           value={registerPhone}
-                          onChange={(e) => setRegisterPhone(e.target.value)}
-                          className="w-full border border-slate-300 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition text-slate-900 bg-white placeholder-slate-400"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-slate-600 mb-1">Email Address *</label>
-                        <input
-                          type="email"
-                          placeholder="e.g. ramesh@gmail.com"
-                          value={registerEmail}
-                          onChange={(e) => setRegisterEmail(e.target.value)}
-                          className="w-full border border-slate-300 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition text-slate-900 bg-white placeholder-slate-400"
+                          onChange={(e) => setRegisterPhone(e.target.value.replace(/\D/g, ""))}
+                          className="w-full border border-slate-300 px-4 py-3 rounded-xl text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition text-slate-900 bg-white placeholder-slate-400"
                         />
                       </div>
 
@@ -2557,23 +2526,14 @@ export default function TektonApp() {
                       </div>
 
                       <button
-                        onClick={async () => {
-                          if (registerName.trim().length < 2) { alert("Please enter your full name."); return; }
-                          if (!registerEmail.trim()) { alert("Please enter your email address."); return; }
-                          if (!registerLocation) { alert("Please select your Bhopal zone."); return; }
+                        onClick={async (e) => {
+                          e.preventDefault();
                           await handleFirebaseRegister();
                         }}
                         disabled={authLoading}
-                        className="w-full bg-[#F8CB46] hover:bg-amber-400 disabled:bg-slate-350 disabled:cursor-not-allowed text-slate-900 font-extrabold text-sm px-4 py-3 rounded-xl shadow-md transition mt-2 border border-amber-500 flex items-center justify-center gap-2"
+                        className="w-full bg-[#F8CB46] hover:bg-[#e2b83b] disabled:bg-slate-300 disabled:cursor-not-allowed text-slate-900 font-extrabold text-sm px-4 py-3 rounded-xl shadow-md transition mt-2 flex items-center justify-center gap-2"
                       >
-                        {authLoading ? (
-                          <>
-                            <span className="w-4 h-4 border-2 border-slate-900 border-t-transparent rounded-full animate-spin"></span>
-                            Sending Magic Link...
-                          </>
-                        ) : (
-                          "✉️ Send Magic Verification Link"
-                        )}
+                        {authLoading ? "Sending OTP..." : "📱 Send SMS OTP"}
                       </button>
 
                       <div className="relative flex py-2 items-center">
@@ -2586,12 +2546,13 @@ export default function TektonApp() {
                         onClick={async (e) => {
                           e.preventDefault();
                           if (registerName.trim().length < 2) { alert("Please enter your full name."); return; }
-                          if (!registerEmail.trim()) { alert("Please enter your email address."); return; }
+                          const phone = registerPhone.replace(/\D/g, "");
+                          if (phone.length !== 10) { alert("Please enter a valid 10-digit mobile number."); return; }
                           if (!registerLocation) { alert("Please select your Bhopal zone."); return; }
                           
                           setOtpCode("123456");
                           setIsOtpSent(true);
-                          await handleVerifyOtp("123456", registerEmail, "register");
+                          await handleVerifyOtp("123456", phone, "register");
                         }}
                         disabled={authLoading}
                         className="w-full bg-slate-900 hover:bg-slate-800 disabled:bg-slate-350 disabled:cursor-not-allowed text-white font-extrabold text-sm px-4 py-3 rounded-xl shadow-md transition mt-1 border border-slate-700 flex items-center justify-center gap-2"
@@ -2603,9 +2564,9 @@ export default function TektonApp() {
                     <>
                       {/* OTP verification view for registration */}
                       <div className="bg-amber-50 border border-amber-250 rounded-2xl p-4 mb-2 text-center text-xs text-amber-850">
-                        We sent a 6-digit OTP code to <strong className="font-bold">{registerEmail}</strong>. Please check your email inbox/spam.
+                        We sent a 6-digit OTP code to <strong className="font-bold">{registerPhone}</strong> via SMS.
                         <div className="mt-2 font-bold text-amber-900 bg-amber-100/50 py-1 px-2 rounded-lg inline-block">
-                          💡 Testing? You can bypass by entering OTP: <span className="font-extrabold text-amber-950 text-sm">123456</span>
+                          💡 Testing? You can bypass by entering OTP: <span className="font-extrabold text-amber-955 text-sm">123456</span>
                         </div>
                       </div>
                        <div>
@@ -2633,7 +2594,7 @@ export default function TektonApp() {
                           />
                           <button
                             type="button"
-                            onClick={() => handleVerifyOtp(otpCode, registerEmail, "register", true)}
+                            onClick={() => handleVerifyOtp(otpCode, registerPhone, "register", true)}
                             className="text-amber-600 hover:text-amber-500 font-bold text-xs underline mt-2 block mx-auto text-center"
                           >
                             ⚠️ Skip Password (Local Session Only)
@@ -2657,7 +2618,7 @@ export default function TektonApp() {
                           disabled={authLoading}
                           className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3 py-2.5 rounded-xl transition border border-slate-300"
                         >
-                          Change Email
+                          Change Phone
                         </button>
                         <button
                           onClick={() => handleFirebaseRegister()}
@@ -2669,7 +2630,7 @@ export default function TektonApp() {
                       </div>
 
                       <button
-                        onClick={() => handleVerifyOtp(otpCode, registerEmail, "register")}
+                        onClick={() => handleVerifyOtp(otpCode, registerPhone, "register")}
                         disabled={authLoading}
                         className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-350 disabled:cursor-not-allowed text-white font-extrabold text-sm px-4 py-3 rounded-xl shadow-md transition mt-2 flex items-center justify-center gap-2"
                       >
@@ -2730,20 +2691,22 @@ export default function TektonApp() {
 
                       <div>
                         <label className="block text-xs font-bold text-slate-600 mb-1">
-                          {loginRole === "vendor" ? "Vendor Email Address" : "Email Address"}
+                          {loginRole === "vendor" ? "Vendor Mobile Number *" : "Mobile Number *"}
                         </label>
                         <input
-                          type="email"
-                          placeholder="Enter your email"
-                          value={loginEmailInput}
-                          onChange={(e) => setLoginEmailInput(e.target.value)}
+                          type="tel"
+                          placeholder="10-digit number e.g. 9876543210"
+                          maxLength={10}
+                          value={loginPhoneInput}
+                          onChange={(e) => setLoginPhoneInput(e.target.value.replace(/\D/g, ""))}
                           className="w-full border border-slate-300 px-4 py-3 rounded-xl text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition text-slate-900 bg-white placeholder-slate-400"
                         />
                       </div>
                       <button
                         onClick={async () => {
-                          if (!loginEmailInput.trim()) {
-                            alert("Please enter your email address.");
+                          const phone = loginPhoneInput.replace(/\D/g, "");
+                          if (phone.length !== 10) {
+                            alert("Please enter a valid 10-digit mobile number.");
                             return;
                           }
                           await handleFirebaseLogin();
@@ -2754,10 +2717,10 @@ export default function TektonApp() {
                         {authLoading ? (
                           <>
                             <span className="w-4 h-4 border-2 border-slate-900 border-t-transparent rounded-full animate-spin"></span>
-                            Sending Magic Link...
+                            Sending OTP...
                           </>
                         ) : (
-                          "✉️ Send Magic Login Link"
+                          "📱 Send SMS OTP"
                         )}
                       </button>
 
@@ -2770,14 +2733,15 @@ export default function TektonApp() {
                       <button
                         onClick={async (e) => {
                           e.preventDefault();
-                          if (!loginEmailInput.trim()) {
-                            alert("Please enter your email address.");
+                          const phone = loginPhoneInput.replace(/\D/g, "");
+                          if (phone.length !== 10) {
+                            alert("Please enter a valid 10-digit mobile number.");
                             return;
                           }
                           
                           setOtpCode("123456");
                           setIsOtpSent(true);
-                          await handleVerifyOtp("123456", loginEmailInput, "login");
+                          await handleVerifyOtp("123456", phone, "login");
                         }}
                         disabled={authLoading}
                         className="w-full bg-slate-900 hover:bg-slate-800 disabled:bg-slate-350 disabled:cursor-not-allowed text-white font-extrabold text-sm px-4 py-3 rounded-xl shadow-md transition mt-1 border border-slate-700 flex items-center justify-center gap-2"
@@ -2789,7 +2753,7 @@ export default function TektonApp() {
                     <>
                       {/* OTP verification view for login */}
                       <div className="bg-amber-50 border border-amber-250 rounded-2xl p-4 mb-2 text-center text-xs text-amber-855">
-                        We sent a 6-digit OTP code to <strong className="font-bold">{loginEmailInput}</strong>. Please check your email inbox/spam.
+                        We sent a 6-digit OTP code to <strong className="font-bold">{loginPhoneInput}</strong> via SMS.
                         <div className="mt-2 font-bold text-amber-900 bg-amber-100/50 py-1 px-2 rounded-lg inline-block">
                           💡 Testing? You can bypass by entering OTP: <span className="font-extrabold text-amber-950 text-sm">123456</span>
                         </div>
@@ -2819,7 +2783,7 @@ export default function TektonApp() {
                           />
                           <button
                             type="button"
-                            onClick={() => handleVerifyOtp(otpCode, loginEmailInput, "login", true)}
+                            onClick={() => handleVerifyOtp(otpCode, loginPhoneInput, "login", true)}
                             className="text-amber-600 hover:text-amber-500 font-bold text-xs underline mt-2 block mx-auto text-center"
                           >
                             ⚠️ Skip Password (Local Session Only)
@@ -2843,7 +2807,7 @@ export default function TektonApp() {
                           disabled={authLoading}
                           className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3 py-2.5 rounded-xl transition border border-slate-300"
                         >
-                          Change Email
+                          Change Phone
                         </button>
                         <button
                           onClick={() => handleFirebaseLogin()}
@@ -2855,7 +2819,7 @@ export default function TektonApp() {
                       </div>
 
                       <button
-                        onClick={() => handleVerifyOtp(otpCode, loginEmailInput, "login")}
+                        onClick={() => handleVerifyOtp(otpCode, loginPhoneInput, "login")}
                         disabled={authLoading}
                         className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-350 disabled:cursor-not-allowed text-white font-extrabold text-sm px-4 py-3 rounded-xl shadow-md transition mt-2 flex items-center justify-center gap-2"
                       >

@@ -204,9 +204,21 @@ export default function BookingModal({
     setStep(3);
   };
 
-  // Step 3 Submission — field names match the appointments API
-  const handleFinalSubmit = async () => {
-    setIsSubmitting(true);
+  const loadRazorpayScript = () => {
+    return new Promise((resolve) => {
+      if (typeof window !== "undefined" && (window as any).Razorpay) {
+        resolve(true);
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
+
+  const submitBooking = async (transactionId: string | null = null) => {
     try {
       const finalPayload = {
         serviceCategory: serviceName,
@@ -222,6 +234,7 @@ export default function BookingModal({
         couponDiscount: couponDeducted,
         paymentMethod,
         assignedWorkerId: worker ? worker.id : null,
+        transactionId: transactionId,
       };
 
       // Save name & phone for future convenience
@@ -239,6 +252,84 @@ export default function BookingModal({
       console.error(err);
       alert("Booking failed. Please try again.");
     } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Step 3 Submission — field names match the appointments API
+  const handleFinalSubmit = async () => {
+    setIsSubmitting(true);
+
+    if (paymentMethod === "Cash") {
+      await submitBooking(null);
+      return;
+    }
+
+    try {
+      // 1. Load Razorpay script
+      const resScript = await loadRazorpayScript();
+      if (!resScript) {
+        alert("Failed to load Razorpay library. Please check your internet connection.");
+        setIsSubmitting(false);
+        return;
+      }
+
+      // 2. Create order on server
+      const orderRes = await fetch("/api/payments/create-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workerId: worker ? worker.id : null,
+          category: serviceName,
+          couponCode: couponApplied ? couponCode : "",
+        }),
+      });
+
+      const orderData = await orderRes.json();
+      if (!orderRes.ok || !orderData.success) {
+        throw new Error(orderData.error || "Failed to create order");
+      }
+
+      // 3. Check if mock mode is active
+      if (orderData.mock) {
+        const mockPayId = `pay_mock_${Math.random().toString(36).substring(2, 12)}`;
+        alert(`[Test Mode] Mock Payment order created successfully!\nOrder ID: ${orderData.orderId}\nProceeding with mock authorization...`);
+        await submitBooking(mockPayId);
+        return;
+      }
+
+      // 4. Open Razorpay checkout
+      const options = {
+        key: orderData.keyId,
+        amount: orderData.amount,
+        currency: orderData.currency,
+        name: "Tekton Bhopal",
+        description: worker ? `Artisan Booking: ${worker.name}` : `${serviceName} Service`,
+        order_id: orderData.orderId,
+        handler: async function (response: any) {
+          const transactionId = response.razorpay_payment_id;
+          await submitBooking(transactionId);
+        },
+        prefill: {
+          name: customerName,
+          contact: customerPhone,
+        },
+        theme: {
+          color: "#F8CB46",
+        },
+        modal: {
+          ondismiss: function () {
+            setIsSubmitting(false);
+          },
+        },
+      };
+
+      const rzp = new (window as any).Razorpay(options);
+      rzp.open();
+
+    } catch (err: any) {
+      console.error("Payment Error:", err);
+      alert(`Payment initialization failed: ${err.message || err}. Please try again or choose Cash.`);
       setIsSubmitting(false);
     }
   };
