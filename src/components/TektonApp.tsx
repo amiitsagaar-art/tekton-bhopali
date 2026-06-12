@@ -549,19 +549,23 @@ export default function TektonApp() {
         throw new Error("Google account must have a verified email address.");
       }
 
-      // 1. Sync with Firestore 'users' collection
-      const userDocRef = doc(db, "users", user.uid);
-      const userDocSnap = await getDoc(userDocRef);
-      
-      if (!userDocSnap.exists()) {
-        await setDoc(userDocRef, {
-          uid: user.uid,
-          name: user.displayName || `User_${user.uid.slice(-4)}`,
-          email: user.email,
-          photoURL: user.photoURL || "",
-          role: "user",
-          createdAt: new Date().toISOString()
-        });
+      // 1. Sync with Firestore 'users' collection (fail-safe)
+      try {
+        const userDocRef = doc(db, "users", user.uid);
+        const userDocSnap = await getDoc(userDocRef);
+        
+        if (!userDocSnap.exists()) {
+          await setDoc(userDocRef, {
+            uid: user.uid,
+            name: user.displayName || `User_${user.uid.slice(-4)}`,
+            email: user.email,
+            photoURL: user.photoURL || "",
+            role: "user",
+            createdAt: new Date().toISOString()
+          });
+        }
+      } catch (firestoreErr) {
+        console.warn("Firestore sync skipped or failed (uninitialized/offline):", firestoreErr);
       }
 
       // 2. Sync with PostgreSQL backend /api/users
