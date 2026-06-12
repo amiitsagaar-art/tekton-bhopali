@@ -4,18 +4,18 @@ import Footer from "@/components/Footer";
 import { Clock, ShieldCheck, Award } from "lucide-react";
 
 const TEAM = [
-  { name: "Amit Sagar", role: "Proprietor & Founder", dept: "Leadership", color: "bg-amber-400" },
-  { name: "Mosin", role: "Senior Electrician", dept: "Skilled Worker", color: "bg-blue-400" },
-  { name: "Anshar", role: "Electrician", dept: "Skilled Worker", color: "bg-emerald-500" },
-  { name: "Satendra", role: "Electrician", dept: "Skilled Worker", color: "bg-purple-500" },
-  { name: "Rahul", role: "Lead Plumber", dept: "Skilled Worker", color: "bg-yellow-500" },
-  { name: "Rohit", role: "Senior Painter", dept: "Skilled Worker", color: "bg-cyan-500" },
-  { name: "Toshit Kushwaha", role: "Senior Carpenter", dept: "Skilled Worker", color: "bg-rose-400" },
-  { name: "Priya Verma", role: "Quality Inspection Expert", dept: "Quality Control", color: "bg-indigo-500" },
-  { name: "Anjali Singh", role: "Quality Auditor", dept: "Quality Control", color: "bg-orange-500" },
-  { name: "Deepak Sharma", role: "Quality Inspection", dept: "Quality Control", color: "bg-teal-500" },
-  { name: "Neeraj Tiwari", role: "Quality Auditor", dept: "Quality Control", color: "bg-pink-400" },
-  { name: "Vikram Rajput", role: "Quality Auditor", dept: "Quality Control", color: "bg-lime-500" },
+  { name: "Amit Sagar", role: "Proprietor & Founder", dept: "Leadership" },
+  { name: "Mosin", role: "Senior Electrician", dept: "Skilled Worker" },
+  { name: "Anshar", role: "Electrician", dept: "Skilled Worker" },
+  { name: "Satendra", role: "Electrician", dept: "Skilled Worker" },
+  { name: "Rahul", role: "Lead Plumber", dept: "Skilled Worker" },
+  { name: "Rohit", role: "Senior Painter", dept: "Skilled Worker" },
+  { name: "Toshit Kushwaha", role: "Senior Carpenter", dept: "Skilled Worker" },
+  { name: "Priya Verma", role: "Quality Inspection Expert", dept: "Quality Control" },
+  { name: "Anjali Singh", role: "Quality Auditor", dept: "Quality Control" },
+  { name: "Deepak Sharma", role: "Quality Inspection", dept: "Quality Control" },
+  { name: "Neeraj Tiwari", role: "Quality Auditor", dept: "Quality Control" },
+  { name: "Vikram Rajput", role: "Quality Auditor", dept: "Quality Control" },
 ];
 
 const DEPT_COLORS: Record<string, string> = {
@@ -23,6 +23,14 @@ const DEPT_COLORS: Record<string, string> = {
   "Skilled Worker": "bg-blue-950 text-blue-400 border border-blue-900",
   "Quality Control": "bg-emerald-950 text-emerald-400 border border-emerald-900",
 };
+
+function getInitials(name: string) {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  return name.trim().substring(0, 2).toUpperCase();
+}
 
 export default function AboutPage() {
   return (
@@ -95,15 +103,21 @@ export default function AboutPage() {
                 key={idx}
                 className="bg-slate-900 rounded-2xl border border-white/5 p-5 shadow-lg flex flex-col items-center text-center hover:-translate-y-1 transition-all duration-300 group"
               >
-                {/* Avatar Image using Ui-Avatars as placeholder for professional headshots */}
+                {/* Premium local letter avatar with hover glow blur effect */}
                 <div className="mb-4 relative">
-                  <div className={`absolute inset-0 rounded-full ${member.color} opacity-20 group-hover:scale-110 transition-transform blur-sm`}></div>
-                  <img 
-                    src={`https://ui-avatars.com/api/?name=${encodeURIComponent(member.name)}&background=random&color=fff&size=128&font-size=0.33`}
-                    alt={member.name}
-                    className="w-16 h-16 rounded-full object-cover relative z-10 border-2 border-slate-700 shadow-md group-hover:scale-110 transition-transform"
-                    loading="lazy"
-                  />
+                  <div className={`absolute inset-0 rounded-full bg-gradient-to-br ${
+                    member.dept === "Leadership" ? "from-amber-400 to-yellow-500" :
+                    member.dept === "Quality Control" ? "from-emerald-400 to-teal-500" :
+                    "from-blue-500 to-indigo-600"
+                  } opacity-20 group-hover:scale-115 transition-transform blur-md`}></div>
+                  
+                  <div className={`w-16 h-16 rounded-full bg-gradient-to-br ${
+                    member.dept === "Leadership" ? "from-amber-400 via-yellow-400 to-yellow-500 text-slate-950 font-black" :
+                    member.dept === "Quality Control" ? "from-emerald-400 via-teal-400 to-teal-500 text-slate-950 font-black" :
+                    "from-blue-500 via-indigo-500 to-indigo-600 text-white font-bold"
+                  } relative z-10 border border-white/10 shadow-lg flex items-center justify-center text-base tracking-tight group-hover:scale-110 transition-transform select-none`}>
+                    {getInitials(member.name)}
+                  </div>
                 </div>
                 
                 <h4 className="font-bold text-slate-200 text-sm leading-tight mb-1">{member.name}</h4>

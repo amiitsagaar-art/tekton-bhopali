@@ -1,14 +1,37 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
-import { LogOut, Calendar, Users, FileCheck, CheckCircle, XCircle, AlertCircle, MapPin, Star, Trash2, Image as ImageIcon, UploadCloud, ShieldOff, Shield, Tag, IndianRupee, Plus, ToggleLeft, ToggleRight } from "lucide-react"
+import { LogOut, Calendar, Users, FileCheck, CheckCircle, XCircle, AlertCircle, MapPin, Star, Trash2, Image as ImageIcon, UploadCloud, ShieldOff, Shield, Tag, IndianRupee, Plus, ToggleLeft, ToggleRight, Wrench, Hammer, Bolt, Paintbrush, Sparkles, Snowflake, BookOpen, Settings } from "lucide-react"
 import Link from "next/link"
+
+const ICON_MAP: Record<string, React.ComponentType<any>> = {
+  Plumbing: Wrench,
+  Plumber: Wrench,
+  Electrician: Bolt,
+  Carpentry: Hammer,
+  Carpenter: Hammer,
+  Painting: Paintbrush,
+  Painter: Paintbrush,
+  Cleaning: Sparkles,
+  "AC Repair": Snowflake,
+  "Civil Work": Settings,
+  "Civil Architect": Settings,
+  "Civil Construction": Settings,
+  "Home Tutors": BookOpen,
+};
+
+const getServiceIcon = (category: string): React.ComponentType<any> => {
+  const match = Object.keys(ICON_MAP).find(
+    key => category.toLowerCase().includes(key.toLowerCase()) || key.toLowerCase().includes(category.toLowerCase())
+  );
+  return match ? ICON_MAP[match] : Settings;
+};
 import { auth } from "@/lib/firebase"
 import { onAuthStateChanged, signOut, User } from "firebase/auth"
 
 export default function AdminControlPanel() {
   // Tab selection
-  const [activeTab, setActiveTab] = useState<"bookings" | "workers" | "serviceAreas" | "reviews" | "recentWorks" | "pricing">("bookings")
+  const [activeTab, setActiveTab] = useState<"bookings" | "workers" | "serviceAreas" | "reviews" | "recentWorks" | "pricing" | "payments">("bookings")
 
   // Auth states
   const [authUser, setAuthUser] = useState<User | null>(null)
@@ -16,10 +39,8 @@ export default function AdminControlPanel() {
   const [adminTokenInput, setAdminTokenInput] = useState("")
   const [tokenError, setTokenError] = useState("")
   const [isTokenVerified, setIsTokenVerified] = useState(false)
+  const [adminToken, setAdminToken] = useState("")
   const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL || ""
-  // NOTE: Admin token is sent via header but should be stored in env only
-  // The actual secret lives in ADMIN_SECRET_TOKEN server-side env var
-  const ADMIN_TOKEN = process.env.NEXT_PUBLIC_ADMIN_TOKEN || ""
 
   // Helper to verify admin email
   const isAdmin = (email?: string | null) => {
@@ -39,7 +60,7 @@ export default function AdminControlPanel() {
   // Helper: admin headers for all sensitive API calls
   const adminHeaders = {
     "Content-Type": "application/json",
-    "x-admin-token": ADMIN_TOKEN,
+    "x-admin-token": adminToken,
   }
 
   // Firebase Auth listener — runs once on mount
@@ -73,12 +94,35 @@ export default function AdminControlPanel() {
 
     if (authUser && isAdmin(authUser.email)) {
       setIsTokenVerified(true);
-    } else if (savedToken === ADMIN_TOKEN && isLocalEmailAdmin) {
-      setIsTokenVerified(true);
+    } else if (savedToken && isLocalEmailAdmin) {
+      // Verify stored token on mount
+      fetch("/api/auth/verify-admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: savedToken }),
+      })
+        .then(async (res) => {
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success) {
+              setAdminToken(savedToken);
+              setIsTokenVerified(true);
+            } else {
+              localStorage.removeItem("tektonAdminToken");
+              setIsTokenVerified(false);
+            }
+          } else {
+            localStorage.removeItem("tektonAdminToken");
+            setIsTokenVerified(false);
+          }
+        })
+        .catch(() => {
+          setIsTokenVerified(false);
+        });
     } else {
       setIsTokenVerified(false);
     }
-  }, [authUser, ADMIN_TOKEN, ADMIN_EMAIL]);
+  }, [authUser, ADMIN_EMAIL]);
 
   // Real data states (initially empty)
   const [isLoading, setIsLoading] = useState(true)
@@ -94,7 +138,16 @@ export default function AdminControlPanel() {
     price?: string
     description?: string
     assignedWorkerId?: string
+    visitCharge?: number
+    extraCharge?: number
+    totalAmount?: number
+    paymentStatus?: string
+    transactionId?: string
   }>>([])
+
+  const [updatingExtraChargeId, setUpdatingExtraChargeId] = useState<string | null>(null)
+  const [extraChargeInput, setExtraChargeInput] = useState<string>("")
+  const [selectedInvoiceBooking, setSelectedInvoiceBooking] = useState<any | null>(null)
 
   const [workers, setWorkers] = useState<Array<{
     id: string
@@ -105,6 +158,7 @@ export default function AdminControlPanel() {
     experienceYears?: number
     aadharUrl?: string
     status: string
+    isApproved: boolean
   }>>([])
   
   const [serviceAreas, setServiceAreas] = useState<Array<{
@@ -144,8 +198,6 @@ export default function AdminControlPanel() {
   const [newZoneName, setNewZoneName] = useState("");
   const [isAddingZone, setIsAddingZone] = useState(false);
 
-  // ─── Pricing & Coupons State ───────────────────────────────────
-  const SERVICE_CATEGORIES = ["Plumbing", "Electrician", "Carpentry", "Painting", "Cleaning", "AC Repair", "Civil Work", "Home Tutors"];
   const [servicePrices, setServicePrices] = useState<Record<string, number>>({});
   const [editingPrices, setEditingPrices] = useState<Record<string, string>>({});
   const [savingPrice, setSavingPrice] = useState<string | null>(null);
@@ -158,6 +210,8 @@ export default function AdminControlPanel() {
     code: "", discountValue: "", isPercentage: false, description: ""
   });
   const [isAddingCoupon, setIsAddingCoupon] = useState(false);
+  const [isCashPaymentEnabled, setIsCashPaymentEnabled] = useState(false);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
 
   // Helper to mask Aadhaar numbers
   const maskAadhar = (aadhar?: string) => {
@@ -168,14 +222,15 @@ export default function AdminControlPanel() {
 
   const fetchData = async () => {
     try {
-      const [bookRes, workerRes, areaRes, reviewRes, workRes, pricingRes, couponRes] = await Promise.all([
-        fetch("/api/appointments"),
-        fetch("/api/workers"),
+      const [bookRes, workerRes, areaRes, reviewRes, workRes, pricingRes, couponRes, settingsRes] = await Promise.all([
+        fetch("/api/appointments", { headers: adminHeaders }),
+        fetch("/api/workers?all=true", { headers: adminHeaders }),
         fetch("/api/service-areas"),
         fetch("/api/reviews"),
         fetch("/api/recent-works"),
         fetch("/api/pricing"),
         fetch("/api/coupons", { headers: adminHeaders }),
+        fetch("/api/settings"),
       ])
       const bookingsData = bookRes.ok ? await bookRes.json() : []
       const workersData = workerRes.ok ? await workerRes.json() : []
@@ -184,6 +239,7 @@ export default function AdminControlPanel() {
       const worksData = workRes.ok ? await workRes.json() : []
       const pricingData = pricingRes.ok ? await pricingRes.json() : { prices: {}, coupons: [] }
       const couponsData = couponRes.ok ? await couponRes.json() : []
+      const settingsData = settingsRes.ok ? await settingsRes.json() : { settings: {} }
 
       setBookings(bookingsData)
       setWorkers(workersData)
@@ -200,6 +256,9 @@ export default function AdminControlPanel() {
         setEditingPrices(initialEdits)
       }
       setAllCoupons(Array.isArray(couponsData) ? couponsData : [])
+      if (settingsData.settings && settingsData.settings.enableCashPayment !== undefined) {
+        setIsCashPaymentEnabled(settingsData.settings.enableCashPayment === "true");
+      }
     } catch (err) {
       console.error("Dashboard fetch error:", err)
     } finally {
@@ -207,12 +266,12 @@ export default function AdminControlPanel() {
     }
   }
 
-  // Fetch bookings and workers on component mount — only when admin is verified
+  // Fetch bookings and workers when admin is verified
   useEffect(() => {
-    if (authUser && isAdmin(authUser.email)) {
+    if (isTokenVerified) {
       fetchData()
     }
-  }, [authUser])
+  }, [isTokenVerified])
 
   // Update booking status via API
   const updateBookingStatus = async (id: string, newStatus: string) => {
@@ -234,14 +293,34 @@ export default function AdminControlPanel() {
   // Update worker status via API
   const updateWorkerStatus = async (workerId: string, newStatus: string) => {
     try {
+      const isApproved = newStatus === "Approved";
       const res = await fetch(`/api/workers/${workerId}`, {
         method: "PATCH",
         headers: adminHeaders,
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ status: newStatus, isApproved }),
       })
       if (!res.ok) throw new Error("Failed to update worker")
       setWorkers(prev =>
-        prev.map(w => (w.id === workerId ? { ...w, status: newStatus } : w))
+        prev.map(w => (w.id === workerId ? { ...w, status: newStatus, isApproved } : w))
+      )
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  // Update worker approval status directly
+  const toggleWorkerApproval = async (workerId: string, currentApproval: boolean) => {
+    try {
+      const newApproval = !currentApproval;
+      const newStatus = newApproval ? "Approved" : "Pending";
+      const res = await fetch(`/api/workers/${workerId}`, {
+        method: "PATCH",
+        headers: adminHeaders,
+        body: JSON.stringify({ isApproved: newApproval, status: newStatus }),
+      })
+      if (!res.ok) throw new Error("Failed to toggle approval")
+      setWorkers(prev =>
+        prev.map(w => (w.id === workerId ? { ...w, isApproved: newApproval, status: newStatus } : w))
       )
     } catch (e) {
       console.error(e)
@@ -267,6 +346,25 @@ export default function AdminControlPanel() {
     } catch (e) {
       console.error(e);
       alert("Error assigning worker");
+    }
+  };
+
+  const updateExtraCharge = async (bookingId: string, extraChargeVal: number) => {
+    try {
+      const res = await fetch(`/api/appointments/${bookingId}`, {
+        method: "PATCH",
+        headers: adminHeaders,
+        body: JSON.stringify({ extraCharge: extraChargeVal }),
+      });
+      if (!res.ok) throw new Error("Failed to update extra charges");
+      const updatedData = await res.json();
+      setBookings(prev =>
+        prev.map(b => (b.id === bookingId ? { ...b, extraCharge: updatedData.extraCharge, totalAmount: updatedData.totalAmount } : b))
+      );
+      alert("✅ Extra charges updated successfully!");
+    } catch (e: any) {
+      console.error(e);
+      alert("Error updating extra charge: " + e.message);
     }
   };
 
@@ -302,6 +400,35 @@ export default function AdminControlPanel() {
       console.error(e);
     }
   }
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setNewWork(prev => ({ ...prev, imageUrl: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleDeleteRecentWork = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this project photo?")) return;
+    try {
+      const res = await fetch(`/api/recent-works?id=${id}`, {
+        method: "DELETE",
+        headers: adminHeaders,
+      });
+      if (res.ok) {
+        setRecentWorks(prev => prev.filter(w => w.id !== id));
+        alert("Published work deleted successfully!");
+      } else {
+        alert("Failed to delete recent work");
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const handlePublishWork = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -452,14 +579,32 @@ export default function AdminControlPanel() {
           </p>
 
           <form
-            onSubmit={(e) => {
+            onSubmit={async (e) => {
               e.preventDefault();
-              if (adminTokenInput.trim() === ADMIN_TOKEN) {
-                localStorage.setItem("tektonAdminToken", adminTokenInput.trim());
-                setIsTokenVerified(true);
-                setTokenError("");
-              } else {
-                setTokenError("Invalid Admin Secret Token!");
+              const tokenInput = adminTokenInput.trim();
+              if (!tokenInput) {
+                setTokenError("Password cannot be empty!");
+                return;
+              }
+              try {
+                const res = await fetch("/api/auth/verify-admin", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ token: tokenInput }),
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                  // Use the server-resolved token (ADMIN_SECRET_TOKEN or ADMIN_PASSWORD)
+                  const resolvedToken = data.token || tokenInput;
+                  localStorage.setItem("tektonAdminToken", resolvedToken);
+                  setAdminToken(resolvedToken);
+                  setIsTokenVerified(true);
+                  setTokenError("");
+                } else {
+                  setTokenError(data.error || "Invalid Admin Password!");
+                }
+              } catch (err: any) {
+                setTokenError("Verification failed: " + (err.message || "Server error"));
               }
             }}
             className="space-y-4"
@@ -658,6 +803,15 @@ export default function AdminControlPanel() {
               <div className="absolute bottom-0 left-0 w-full h-0.5 bg-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.8)]" />
             )}
           </button>
+          <button
+            onClick={() => setActiveTab("payments")}
+            className={`whitespace-nowrap pb-4 text-sm sm:text-base font-bold transition-all relative flex items-center gap-2 ${activeTab === "payments" ? "text-yellow-400" : "text-slate-400 hover:text-slate-200"}`}
+          >
+            🧾 Bills & Payments
+            {activeTab === "payments" && (
+              <div className="absolute bottom-0 left-0 w-full h-0.5 bg-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.8)]" />
+            )}
+          </button>
         </div>
         
         {/* Tab content */}
@@ -687,7 +841,7 @@ export default function AdminControlPanel() {
                       <td className="px-6 py-4 text-slate-300">{b.location}</td>
                       <td className="px-6 py-4 text-slate-400">{b.appointmentDate} {b.appointmentTime}</td>
                       <td className="px-6 py-4 font-bold text-yellow-400">
-                        {b.price ?? (b.description ? b.description : "-")}
+                        ₹{b.totalAmount || b.visitCharge || b.price || "-"}
                       </td>
                       <td className="px-6 py-4">{getStatusBadge(b.status)}</td>
                        <td className="px-6 py-4">
@@ -737,6 +891,7 @@ export default function AdminControlPanel() {
                     <th className="px-6 py-4">Category</th>
                     <th className="px-6 py-4">Experience</th>
                     <th className="px-6 py-4 text-red-400">Aadhaar No.</th>
+                    <th className="px-6 py-4">Approval Status</th>
                     <th className="px-6 py-4 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -749,16 +904,31 @@ export default function AdminControlPanel() {
                       <td className="px-6 py-4 text-slate-300">{w.category}</td>
                       <td className="px-6 py-4 text-slate-300">{w.experienceYears ?? "-"}</td>
                       <td className="px-6 py-4 font-mono font-bold text-slate-500">{maskAadhar(w.aadharUrl)}</td>
+                      <td className="px-6 py-4">
+                        <button
+                          onClick={() => toggleWorkerApproval(w.id, w.isApproved)}
+                          className="flex items-center gap-1.5 focus:outline-none"
+                        >
+                          {w.isApproved ? (
+                            <ToggleRight className="w-6 h-6 text-emerald-450" />
+                          ) : (
+                            <ToggleLeft className="w-6 h-6 text-slate-500" />
+                          )}
+                          <span className={w.isApproved ? "text-emerald-400 font-bold" : "text-slate-500"}>
+                            {w.isApproved ? "Approved" : "Pending"}
+                          </span>
+                        </button>
+                      </td>
                       <td className="px-6 py-4 text-right space-x-2">
                         <button
-                          disabled={w.status.toLowerCase() !== "pending"}
+                          disabled={w.isApproved}
                           onClick={() => updateWorkerStatus(w.id, "Approved")}
                           className="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-lg shadow-emerald-500/20 inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <CheckCircle className="w-3.5 h-3.5" /> Approve
                         </button>
                         <button
-                          disabled={w.status.toLowerCase() !== "pending"}
+                          disabled={w.status === "Rejected"}
                           onClick={() => updateWorkerStatus(w.id, "Rejected")}
                           className="bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 px-3 py-1.5 rounded-lg text-xs font-bold inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
@@ -872,15 +1042,38 @@ export default function AdminControlPanel() {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-400 mb-1">Image URL</label>
-                  <input
-                    type="url"
-                    required
-                    value={newWork.imageUrl}
-                    onChange={e => setNewWork({...newWork, imageUrl: e.target.value})}
-                    placeholder="https://example.com/image.jpg"
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white outline-none focus:border-yellow-400 transition"
-                  />
+                  <label className="block text-xs font-bold text-slate-400 mb-2">Project Photo</label>
+                  <div className="flex flex-col items-center justify-center border-2 border-dashed border-slate-700 hover:border-yellow-450/50 rounded-2xl p-6 transition bg-slate-900 cursor-pointer relative group">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageChange}
+                      className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                      required={!newWork.imageUrl}
+                    />
+                    {newWork.imageUrl ? (
+                      <div className="relative w-full max-h-64 rounded-xl overflow-hidden flex items-center justify-center bg-slate-950 z-20">
+                        <img src={newWork.imageUrl} alt="Preview" className="max-w-full max-h-64 object-contain" />
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            setNewWork(prev => ({ ...prev, imageUrl: "" }));
+                          }}
+                          className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white rounded-full p-1.5 shadow-lg transition"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="text-center space-y-2 pointer-events-none">
+                        <UploadCloud className="w-10 h-10 text-slate-500 group-hover:text-yellow-400 transition mx-auto" />
+                        <p className="text-sm font-semibold text-white">Click or Drag to Upload Project Image</p>
+                        <p className="text-xs text-slate-500">Supports PNG, JPG, JPEG (Max 5MB)</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <button
                   type="submit"
@@ -893,18 +1086,28 @@ export default function AdminControlPanel() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
                 {recentWorks.map(work => (
-                  <div key={work.id} className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden group">
-                    <div className="h-40 w-full bg-slate-800 relative overflow-hidden">
-                      <img src={work.imageUrl} alt={work.title} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
-                      <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-2 py-1 rounded text-[10px] font-bold text-white">
-                        {work.category}
+                  <div key={work.id} className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden group relative flex flex-col justify-between">
+                    <div>
+                      <div className="h-40 w-full bg-slate-800 relative overflow-hidden">
+                        <img src={work.imageUrl} alt={work.title} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
+                        <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-2 py-1 rounded text-[10px] font-bold text-white">
+                          {work.category}
+                        </div>
+                      </div>
+                      <div className="p-4">
+                        <h3 className="font-bold text-white text-sm truncate">{work.title}</h3>
+                        <p className="text-xs text-slate-400 flex items-center gap-1 mt-1">
+                          <MapPin className="w-3 h-3" /> {work.location}
+                        </p>
                       </div>
                     </div>
-                    <div className="p-4">
-                      <h3 className="font-bold text-white text-sm truncate">{work.title}</h3>
-                      <p className="text-xs text-slate-400 flex items-center gap-1 mt-1">
-                        <MapPin className="w-3 h-3" /> {work.location}
-                      </p>
+                    <div className="p-4 pt-0">
+                      <button
+                        onClick={() => handleDeleteRecentWork(work.id)}
+                        className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1"
+                      >
+                        <Trash2 className="w-4 h-4" /> Delete Project
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -1015,6 +1218,59 @@ export default function AdminControlPanel() {
           ) : activeTab === "pricing" ? (
             <div className="p-6 space-y-8">
 
+              {/* ── System Settings Section ── */}
+              <div className="bg-slate-950 border border-slate-800 rounded-3xl p-6 mb-8 space-y-4">
+                <div className="flex items-center gap-2">
+                  <Settings className="w-5 h-5 text-yellow-400" />
+                  <h2 className="text-lg font-black text-white">System Controls</h2>
+                </div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900/40 p-5 rounded-2xl border border-white/5">
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Cash on Delivery (Cash Payment)</h3>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Toggle whether Cash payments are enabled or marked as Offline in the Booking Modal instantly.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`text-xs font-bold uppercase ${isCashPaymentEnabled ? 'text-emerald-400' : 'text-slate-500'}`}>
+                      {isCashPaymentEnabled ? "Online" : "Offline / Disabled"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const newValue = !isCashPaymentEnabled;
+                        setIsSavingSettings(true);
+                        try {
+                          const res = await fetch("/api/settings", {
+                            method: "POST",
+                            headers: adminHeaders,
+                            body: JSON.stringify({ key: "enableCashPayment", value: String(newValue) }),
+                          });
+                          if (res.ok) {
+                            setIsCashPaymentEnabled(newValue);
+                          } else {
+                            const err = await res.json();
+                            alert(err.error || "Failed to update settings");
+                          }
+                        } catch (err: any) {
+                          alert("Error updating settings: " + err.message);
+                        } finally {
+                          setIsSavingSettings(false);
+                        }
+                      }}
+                      disabled={isSavingSettings}
+                      className="focus:outline-none disabled:opacity-50"
+                    >
+                      {isCashPaymentEnabled ? (
+                        <ToggleRight className="w-8 h-8 text-emerald-400 cursor-pointer" />
+                      ) : (
+                        <ToggleLeft className="w-8 h-8 text-slate-500 cursor-pointer" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               {/* ── Service Pricing Section ── */}
               <div>
                 <div className="flex items-center gap-2 mb-5">
@@ -1023,35 +1279,36 @@ export default function AdminControlPanel() {
                   <span className="text-xs text-slate-500 ml-2">Changes reflect instantly on the booking modal</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {SERVICE_CATEGORIES.map(cat => (
-                    <div key={cat} className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg">
-                          {cat === "Plumbing" ? "🔧" : cat === "Electrician" ? "⚡" : cat === "Carpentry" ? "🪵" : cat === "Painting" ? "🎨" : cat === "Cleaning" ? "🧹" : cat === "AC Repair" ? "❄️" : cat === "Civil Work" ? "🏗️" : "📚"}
-                        </span>
-                        <span className="text-sm font-bold text-white">{cat}</span>
+                  {Object.keys(servicePrices).map(cat => {
+                    const IconComponent = getServiceIcon(cat);
+                    return (
+                      <div key={cat} className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
+                        <div className="flex items-center gap-2">
+                          <IconComponent className="w-5 h-5 text-yellow-400" />
+                          <span className="text-sm font-bold text-white">{cat}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-500 text-sm font-bold">₹</span>
+                          <input
+                            type="number"
+                            min={1}
+                            value={editingPrices[cat] ?? servicePrices[cat] ?? ""}
+                            onChange={e => setEditingPrices(prev => ({ ...prev, [cat]: e.target.value }))}
+                            placeholder={String(servicePrices[cat] || 149)}
+                            className="flex-1 bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm font-mono outline-none focus:border-yellow-400 transition"
+                          />
+                          <button
+                            onClick={() => handleSavePrice(cat)}
+                            disabled={savingPrice === cat}
+                            className="bg-yellow-400 hover:bg-yellow-500 disabled:opacity-50 text-slate-950 font-black text-xs px-3 py-2 rounded-xl transition whitespace-nowrap"
+                          >
+                            {savingPrice === cat ? "Saving..." : "Save"}
+                          </button>
+                        </div>
+                        <p className="text-[10px] text-slate-500">Current: ₹{servicePrices[cat] ?? "default"}</p>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-slate-500 text-sm font-bold">₹</span>
-                        <input
-                          type="number"
-                          min={1}
-                          value={editingPrices[cat] ?? servicePrices[cat] ?? ""}
-                          onChange={e => setEditingPrices(prev => ({ ...prev, [cat]: e.target.value }))}
-                          placeholder={String(servicePrices[cat] || 149)}
-                          className="flex-1 bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm font-mono outline-none focus:border-yellow-400 transition"
-                        />
-                        <button
-                          onClick={() => handleSavePrice(cat)}
-                          disabled={savingPrice === cat}
-                          className="bg-yellow-400 hover:bg-yellow-500 disabled:opacity-50 text-slate-950 font-black text-xs px-3 py-2 rounded-xl transition whitespace-nowrap"
-                        >
-                          {savingPrice === cat ? "Saving..." : "Save"}
-                        </button>
-                      </div>
-                      <p className="text-[10px] text-slate-500">Current: ₹{servicePrices[cat] ?? "default"}</p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1181,9 +1438,278 @@ export default function AdminControlPanel() {
               </div>
 
             </div>
+          ) : activeTab === "payments" ? (
+            <div className="p-6 space-y-6">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <h2 className="text-xl font-black text-white flex items-center gap-2">
+                    <IndianRupee className="w-5 h-5 text-yellow-400" /> Transactions & Bills
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Manage bookings, update extra charges post-visit, and print itemized PDF bills.
+                  </p>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm whitespace-nowrap">
+                  <thead className="bg-slate-950/50 text-slate-400 font-bold uppercase text-xs border-b border-slate-800">
+                    <tr>
+                      <th className="px-6 py-4">Booking ID</th>
+                      <th className="px-6 py-4">Customer Name</th>
+                      <th className="px-6 py-4">Service</th>
+                      <th className="px-6 py-4">Visit Charge</th>
+                      <th className="px-6 py-4">Extra Charge</th>
+                      <th className="px-6 py-4">Total Amount</th>
+                      <th className="px-6 py-4">Payment Method</th>
+                      <th className="px-6 py-4">Payment Status</th>
+                      <th className="px-6 py-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800">
+                    {bookings.length > 0 ? bookings.map(b => {
+                      const finalVisitCharge = b.visitCharge ?? 0;
+                      const finalExtraCharge = b.extraCharge ?? 0;
+                      const finalTotalAmount = b.totalAmount ?? finalVisitCharge + finalExtraCharge;
+                      const isUpdating = updatingExtraChargeId === b.id;
+
+                      return (
+                        <tr key={b.id} className="hover:bg-slate-800/30 transition-colors">
+                          <td className="px-6 py-4 font-mono font-bold text-slate-300">{b.id}</td>
+                          <td className="px-6 py-4 font-bold text-white">{b.customerName}</td>
+                          <td className="px-6 py-4 text-slate-300">{b.category}</td>
+                          <td className="px-6 py-4 font-mono text-slate-300">₹{finalVisitCharge}</td>
+                          <td className="px-6 py-4">
+                            {isUpdating ? (
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-slate-500 text-xs font-mono">₹</span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={extraChargeInput}
+                                  onChange={e => setExtraChargeInput(e.target.value)}
+                                  className="w-20 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white outline-none focus:border-yellow-400 font-mono"
+                                />
+                                <button
+                                  onClick={async () => {
+                                    const val = Number(extraChargeInput) || 0;
+                                    await updateExtraCharge(b.id, val);
+                                    setUpdatingExtraChargeId(null);
+                                  }}
+                                  className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-extrabold text-[10px] px-2 py-1 rounded transition"
+                                >
+                                  Save
+                                </button>
+                                <button
+                                  onClick={() => setUpdatingExtraChargeId(null)}
+                                  className="bg-slate-800 hover:bg-slate-750 text-slate-400 font-bold text-[10px] px-2 py-1 rounded transition"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-slate-300">₹{finalExtraCharge}</span>
+                                <button
+                                  onClick={() => {
+                                    setUpdatingExtraChargeId(b.id);
+                                    setExtraChargeInput(String(finalExtraCharge));
+                                  }}
+                                  className="text-slate-500 hover:text-yellow-400 text-xs underline font-bold"
+                                >
+                                  Edit
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 font-mono font-bold text-yellow-400">₹{finalTotalAmount}</td>
+                          <td className="px-6 py-4 font-bold text-slate-400">{b.transactionId ? "UPI / Card" : "Cash / Pending"}</td>
+                          <td className="px-6 py-4">
+                            <select
+                              value={b.paymentStatus || "Pending"}
+                              onChange={async (e) => {
+                                const newStatus = e.target.value;
+                                try {
+                                  const res = await fetch(`/api/appointments/${b.id}`, {
+                                    method: "PATCH",
+                                    headers: adminHeaders,
+                                    body: JSON.stringify({ paymentStatus: newStatus }),
+                                  });
+                                  if (!res.ok) throw new Error("Failed to update payment status");
+                                  setBookings(prev =>
+                                    prev.map(item => (item.id === b.id ? { ...item, paymentStatus: newStatus } : item))
+                                  );
+                                  alert(`✅ Payment status set to ${newStatus}`);
+                                } catch (err: any) {
+                                  alert("Error: " + err.message);
+                                }
+                              }}
+                              className="bg-slate-950 border border-slate-700 text-slate-300 text-xs rounded-lg p-1 outline-none focus:border-yellow-400"
+                            >
+                              <option value="Pending">Pending</option>
+                              <option value="Paid">Paid</option>
+                              <option value="Refunded">Refunded</option>
+                              <option value="Failed">Failed</option>
+                            </select>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <button
+                              onClick={() => setSelectedInvoiceBooking(b)}
+                              className="bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-black text-xs px-4 py-2 rounded-xl transition flex items-center gap-1.5 ml-auto"
+                            >
+                              🧾 View Bill
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    }) : (
+                      <tr>
+                        <td colSpan={9} className="px-6 py-12 text-center text-slate-500">
+                          <IndianRupee className="w-8 h-8 mx-auto mb-3 opacity-50" />
+                          No transactions found.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           ) : null}
         </div>
       </main>
+
+      {/* 🧾 PRINTABLE INVOICE / BILL MODAL */}
+      {selectedInvoiceBooking && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md print-modal-bg overflow-y-auto">
+          {/* Modal Container */}
+          <div className="bg-slate-900 border border-white/10 rounded-3xl w-full max-w-xl p-8 space-y-6 shadow-2xl relative print-modal-container">
+            
+            {/* Header info */}
+            <div className="flex justify-between items-start border-b border-white/10 pb-6 print:border-slate-200">
+              <div>
+                <h2 className="text-2xl font-black text-white tracking-tight print:text-black">INVOICE</h2>
+                <p className="text-xs text-yellow-400 font-bold uppercase tracking-widest mt-1 print:text-slate-600">Tekton Bhopal</p>
+                <p className="text-[10px] text-slate-500 mt-2 print:text-slate-750">MP Nagar, Bhopal, MP 462011</p>
+                <p className="text-[10px] text-slate-500 print:text-slate-750">support@tektonbhopal.com</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-slate-400 font-bold print:text-slate-500">Invoice No:</p>
+                <p className="text-sm font-mono font-black text-white print:text-black">{selectedInvoiceBooking.id}</p>
+                <p className="text-xs text-slate-400 font-bold mt-3 print:text-slate-500">Date:</p>
+                <p className="text-xs text-slate-300 font-bold print:text-black">{selectedInvoiceBooking.appointmentDate}</p>
+              </div>
+            </div>
+
+            {/* Bill To / Worker details */}
+            <div className="grid grid-cols-2 gap-6 text-xs border-b border-white/10 pb-6 print:border-slate-200">
+              <div className="space-y-1">
+                <p className="text-slate-500 font-bold uppercase tracking-wider print:text-slate-500">Bill To:</p>
+                <p className="font-black text-white print:text-black">{selectedInvoiceBooking.customerName}</p>
+                <p className="text-slate-300 print:text-slate-800">{selectedInvoiceBooking.location}</p>
+                <p className="text-slate-300 print:text-slate-800">Phone: {selectedInvoiceBooking.customerPhone}</p>
+              </div>
+              <div className="space-y-1 text-right">
+                <p className="text-slate-500 font-bold uppercase tracking-wider print:text-slate-500">Artisan Assigned:</p>
+                <p className="font-bold text-white print:text-black">{selectedInvoiceBooking.category} Expert</p>
+                <p className="text-slate-400 print:text-slate-600">Time Slot: {selectedInvoiceBooking.appointmentTime}</p>
+              </div>
+            </div>
+
+            {/* Itemized Table */}
+            <div className="space-y-3">
+              <table className="w-full text-xs text-left">
+                <thead>
+                  <tr className="border-b border-slate-800 text-slate-500 font-bold print:border-slate-200 print:text-slate-500">
+                    <th className="py-2">Description</th>
+                    <th className="py-2 text-right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/40 print:divide-slate-200">
+                  <tr>
+                    <td className="py-3 font-medium text-white print:text-black">
+                      Visit &amp; Service Charge ({selectedInvoiceBooking.category})
+                    </td>
+                    <td className="py-3 text-right font-mono font-bold text-slate-300 print:text-black">
+                      ₹{selectedInvoiceBooking.visitCharge || 0}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-3 font-medium text-white print:text-black">
+                      Post-Visit / Additional Labor &amp; Material Charges
+                    </td>
+                    <td className="py-3 text-right font-mono font-bold text-slate-300 print:text-black">
+                      ₹{selectedInvoiceBooking.extraCharge || 0}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <div className="flex justify-between items-center bg-slate-950/60 p-4 rounded-xl border border-white/5 mt-4 print:bg-slate-100 print:text-black">
+                <span className="text-sm font-black text-white print:text-black">Total Payable</span>
+                <span className="text-lg font-mono font-black text-yellow-400 print:text-black">
+                  ₹{selectedInvoiceBooking.totalAmount || (selectedInvoiceBooking.visitCharge || 0) + (selectedInvoiceBooking.extraCharge || 0)}
+                </span>
+              </div>
+            </div>
+
+            {/* Payment Info */}
+            <div className="flex justify-between items-center text-[10px] text-slate-500 print:text-slate-600">
+              <p>Payment Method: {selectedInvoiceBooking.transactionId ? "UPI / Card" : "Cash"}</p>
+              <p>Payment Status: <span className="font-bold uppercase text-yellow-500 print:text-black">{selectedInvoiceBooking.paymentStatus || "Pending"}</span></p>
+            </div>
+
+            {/* Action buttons (hidden on print) */}
+            <div className="flex gap-3 pt-4 border-t border-white/10 print:hidden justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedInvoiceBooking(null)}
+                className="bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold text-xs px-5 py-2.5 rounded-xl transition"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-black text-xs px-6 py-2.5 rounded-xl transition flex items-center gap-1.5"
+              >
+                Print Invoice
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media print {
+          body * {
+            visibility: hidden !important;
+          }
+          .print-modal-bg, .print-modal-container, .print-modal-container * {
+            visibility: visible !important;
+          }
+          .print-modal-bg {
+            background: white !important;
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+            z-index: 99999 !important;
+          }
+          .print-modal-container {
+            background: white !important;
+            color: black !important;
+            border: none !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+            margin: 0 auto !important;
+            max-width: 100% !important;
+          }
+          .print\\:hidden {
+            display: none !important;
+          }
+        }
+      ` }} />
     </div>
   )
 }

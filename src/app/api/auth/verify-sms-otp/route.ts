@@ -18,8 +18,9 @@ export async function POST(request: Request) {
     const cleanCode = (otp as string).trim();
     const mockEmail = `${cleanPhone}@tektonbhopal.com`;
 
-    // 1. Universal bypass code for verification
-    if (cleanCode === "123456") {
+    // 1. Universal bypass code for verification (Allowed only in local development)
+    const isDev = process.env.NODE_ENV === "development" || !process.env.VERCEL_ENV;
+    if (isDev && cleanCode === "123456") {
       await db.delete(phoneOtps).where(eq(phoneOtps.phone, cleanPhone));
       const user = await getOrCreateUserProfile(cleanPhone, mockEmail);
       return NextResponse.json({

@@ -2,11 +2,34 @@ import { NextResponse } from "next/server";
 import { sendWhatsAppMessage } from "@/utils/whatsapp";
 import { db } from "@/db";
 import { appointments } from "@/db/schema";
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
+import { verifyAdminToken } from "@/lib/adminAuth";
+import { SITE_CONFIG } from "@/config/site";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const workerId = searchParams.get("workerId");
+
+  if (!workerId) {
+    if (!verifyAdminToken(request)) {
+      return NextResponse.json({ error: "Unauthorized. Admin access required." }, { status: 401 });
+    }
+  }
+
   try {
-    const dbAppointments = await db.select().from(appointments).orderBy(desc(appointments.createdAt));
+    let dbAppointments;
+    if (workerId) {
+      dbAppointments = await db
+        .select()
+        .from(appointments)
+        .where(eq(appointments.assignedWorkerId, Number(workerId)))
+        .orderBy(desc(appointments.createdAt));
+    } else {
+      dbAppointments = await db
+        .select()
+        .from(appointments)
+        .orderBy(desc(appointments.createdAt));
+    }
     return NextResponse.json(dbAppointments);
   } catch (dbError: any) {
     console.error("[DATABASE ERROR] Fetching appointments failed:", dbError);
@@ -27,6 +50,8 @@ export async function POST(request: Request) {
       visitDate,
       timeSlot,
       totalPrice,
+      assignedWorkerId,
+      transactionId,
     } = body;
 
     const sheetdbUrl = process.env.SHEETDB_API_URL || "https://sheetdb.io/api/v1/e1d9cpd85s3zu";
@@ -34,6 +59,7 @@ export async function POST(request: Request) {
     // 1. Save strictly to Drizzle database
     let dbBookingId = "";
     try {
+      const charge = totalPrice ? Number(totalPrice) : 0;
       const inserted = await db.insert(appointments).values({
         customerName: customerName || "",
         customerPhone: phoneNumber || "",
@@ -44,6 +70,12 @@ export async function POST(request: Request) {
         appointmentDate: visitDate || "",
         appointmentTime: timeSlot || "",
         status: "Confirmed",
+        assignedWorkerId: assignedWorkerId ? Number(assignedWorkerId) : null,
+        transactionId: transactionId || null,
+        paymentStatus: transactionId ? "Paid" : "Pending",
+        visitCharge: charge,
+        extraCharge: 0,
+        totalAmount: charge,
       }).returning();
       
       if (inserted && inserted[0]) {
@@ -71,6 +103,8 @@ export async function POST(request: Request) {
           timeSlot: timeSlot || "",
           totalPrice: totalPrice || 0,
           status: "Confirmed",
+          transactionId: transactionId || "",
+          paymentStatus: transactionId ? "Paid" : "Pending",
         },
       ],
     };
@@ -96,6 +130,15 @@ export async function POST(request: Request) {
 
     // 4. Send WhatsApp confirmation to customer
     await sendWhatsAppMessage(phoneNumber, `Hi ${customerName}, your booking for ${serviceCategory} on ${visitDate} at ${timeSlot} has been received successfully! Tracking ID: ${dbBookingId}. Team Tekton.`);
+
+    // 5. Send WhatsApp notification to Admin if payment is made
+    if (transactionId) {
+      const adminPhone = process.env.ADMIN_PHONE_NUMBER || SITE_CONFIG.phone || "+919876543210";
+      await sendWhatsAppMessage(
+        adminPhone,
+        `New Paid Booking Confirmed!\nCustomer: ${customerName}\nPhone: ${phoneNumber}\nService: ${serviceCategory}\nVisit Charge: ₹${totalPrice}\nTxn ID: ${transactionId}\nBooking ID: ${dbBookingId}`
+      );
+    }
 
     return NextResponse.json(
       {

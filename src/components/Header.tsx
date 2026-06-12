@@ -2,11 +2,31 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Hammer, Menu, X, Bell, MapPin } from "lucide-react";
 import TektonLogo from "./TektonLogo";
 
 export default function Header() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const pathname = usePathname();
+
+  const isActive = (path: string) => pathname === path;
+
+  const getDesktopClass = (path: string) => {
+    return `px-3 py-2 text-sm font-semibold transition-colors rounded-xl ${
+      isActive(path)
+        ? "text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 shadow-[0_0_15px_rgba(250,204,21,0.05)] font-bold"
+        : "text-slate-300 hover:text-yellow-400"
+    }`;
+  };
+
+  const getMobileClass = (path: string) => {
+    return `block px-4 py-3 text-sm font-semibold rounded-xl transition ${
+      isActive(path)
+        ? "text-yellow-400 bg-yellow-400/10 border-l-2 border-yellow-400 font-bold"
+        : "text-slate-300 hover:text-yellow-400 hover:bg-white/5"
+    }`;
+  };
 
   return (
     <>
@@ -42,10 +62,11 @@ export default function Header() {
           <div className="flex-1 flex items-center justify-center">
             {/* Desktop Links */}
             <nav className="hidden lg:flex items-center space-x-2">
-              <Link href="/" className="px-3 py-2 text-sm font-semibold text-slate-300 hover:text-yellow-400 transition-colors">Home</Link>
-              <Link href="/services" className="px-3 py-2 text-sm font-semibold text-slate-300 hover:text-yellow-400 transition-colors">Services</Link>
-              <Link href="/about" className="px-3 py-2 text-sm font-semibold text-slate-300 hover:text-yellow-400 transition-colors">About Us</Link>
-              <Link href="/contact" className="px-3 py-2 text-sm font-semibold text-slate-300 hover:text-yellow-400 transition-colors">Contact</Link>
+              <Link href="/" className={getDesktopClass("/")}>Home</Link>
+              <Link href="/services" className={getDesktopClass("/services")}>Services</Link>
+              <Link href="/recent-work" className={getDesktopClass("/recent-work")}>Recent Work</Link>
+              <Link href="/about" className={getDesktopClass("/about")}>About Us</Link>
+              <Link href="/contact" className={getDesktopClass("/contact")}>Contact</Link>
             </nav>
 
             {/* Mobile Logo */}
@@ -60,7 +81,7 @@ export default function Header() {
             <Link href="/partner-join" className="bg-white/10 hover:bg-white/20 border border-white/15 text-white px-4 py-2 rounded-xl text-xs font-bold transition">
               Join as Partner
             </Link>
-            <Link href="/" className="bg-yellow-400 hover:bg-yellow-300 text-slate-950 px-4 py-2 rounded-xl text-xs font-black transition">
+            <Link href="/?book=true" className="bg-yellow-400 hover:bg-yellow-300 text-slate-950 px-4 py-2 rounded-xl text-xs font-black transition">
               Book Now
             </Link>
           </div>
@@ -92,16 +113,19 @@ export default function Header() {
             </div>
             
             <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-              <Link href="/" onClick={() => setIsMobileMenuOpen(false)} className="block px-4 py-3 text-sm font-semibold text-slate-300 hover:text-yellow-400 hover:bg-white/5 rounded-xl transition">
+              <Link href="/" onClick={() => setIsMobileMenuOpen(false)} className={getMobileClass("/")}>
                 Home
               </Link>
-              <Link href="/services" onClick={() => setIsMobileMenuOpen(false)} className="block px-4 py-3 text-sm font-semibold text-slate-300 hover:text-yellow-400 hover:bg-white/5 rounded-xl transition">
+              <Link href="/services" onClick={() => setIsMobileMenuOpen(false)} className={getMobileClass("/services")}>
                 Services
               </Link>
-              <Link href="/about" onClick={() => setIsMobileMenuOpen(false)} className="block px-4 py-3 text-sm font-semibold text-slate-300 hover:text-yellow-400 hover:bg-white/5 rounded-xl transition">
+              <Link href="/recent-work" onClick={() => setIsMobileMenuOpen(false)} className={getMobileClass("/recent-work")}>
+                Recent Work
+              </Link>
+              <Link href="/about" onClick={() => setIsMobileMenuOpen(false)} className={getMobileClass("/about")}>
                 About Us
               </Link>
-              <Link href="/contact" onClick={() => setIsMobileMenuOpen(false)} className="block px-4 py-3 text-sm font-semibold text-slate-300 hover:text-yellow-400 hover:bg-white/5 rounded-xl transition">
+              <Link href="/contact" onClick={() => setIsMobileMenuOpen(false)} className={getMobileClass("/contact")}>
                 Contact Us
               </Link>
             </nav>
@@ -110,7 +134,7 @@ export default function Header() {
               <Link href="/partner-join" onClick={() => setIsMobileMenuOpen(false)} className="block w-full text-center bg-white/10 text-white py-3 rounded-xl text-sm font-bold border border-white/10">
                 Join as Partner
               </Link>
-              <Link href="/" onClick={() => setIsMobileMenuOpen(false)} className="block w-full text-center bg-yellow-400 text-slate-950 py-3 rounded-xl text-sm font-black">
+              <Link href="/?book=true" onClick={() => setIsMobileMenuOpen(false)} className="block w-full text-center bg-yellow-400 text-slate-950 py-3 rounded-xl text-sm font-black">
                 Book a Service
               </Link>
             </div>

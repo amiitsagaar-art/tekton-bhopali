@@ -17,7 +17,7 @@ export default function PartnerDashboardPage() {
     router.push("/");
   };
 
-  const [earnings, setEarnings] = useState({ today: 450, week: 3200, month: 12400 });
+  const [earnings, setEarnings] = useState({ today: 0, week: 0, month: 0 });
   const [partnerProfile, setPartnerProfile] = useState<any>(null);
   const [assignedJobs, setAssignedJobs] = useState<any[]>([]);
   const [activeJobs, setActiveJobs] = useState<any[]>([]);
@@ -32,12 +32,12 @@ export default function PartnerDashboardPage() {
       }
 
       try {
-        const [workersRes, appointmentsRes] = await Promise.all([
-          fetch("/api/workers"),
-          fetch("/api/appointments"),
-        ]);
+        const workersRes = await fetch(`/api/workers?phone=${phone}`);
         const workers = await workersRes.json();
-        const partner = workers.find((w: any) => w.phone === phone);
+        if (!workersRes.ok || !Array.isArray(workers)) {
+          throw new Error("Failed to fetch worker profile.");
+        }
+        const partner = workers[0];
 
         // Strict validation: ensure partner exists
         if (!partner) {
@@ -60,9 +60,14 @@ export default function PartnerDashboardPage() {
 
         // Success case – approved/active partner
         setPartnerProfile(partner);
+        
+        const appointmentsRes = await fetch(`/api/appointments?workerId=${partner.id}`);
         const appointments = await appointmentsRes.json();
-        // Convert IDs to strings for safe comparison
-        const myJobs = appointments.filter((b: any) => String(b.assignedWorkerId) === String(partner.id));
+        if (!appointmentsRes.ok || !Array.isArray(appointments)) {
+          throw new Error("Failed to fetch assigned appointments.");
+        }
+
+        const myJobs = appointments;
         const assigned = myJobs.filter((b: any) => {
           const status = b.status?.toLowerCase();
           return status === "assigned" || status === "pending";
@@ -73,6 +78,23 @@ export default function PartnerDashboardPage() {
         });
         setAssignedJobs(assigned);
         setActiveJobs(active);
+
+        // Calculate real earnings from completed jobs
+        const now = new Date();
+        const todayStr = now.toISOString().slice(0, 10);
+        const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        const completedJobs = myJobs.filter((b: any) => b.status?.toLowerCase() === "completed");
+        const todayEarnings = completedJobs
+          .filter((b: any) => b.appointmentDate === todayStr)
+          .reduce((sum: number, b: any) => sum + (b.totalAmount || b.visitCharge || 0), 0);
+        const weekEarnings = completedJobs
+          .filter((b: any) => new Date(b.createdAt) >= oneWeekAgo)
+          .reduce((sum: number, b: any) => sum + (b.totalAmount || b.visitCharge || 0), 0);
+        const monthEarnings = completedJobs
+          .filter((b: any) => new Date(b.createdAt) >= oneMonthAgo)
+          .reduce((sum: number, b: any) => sum + (b.totalAmount || b.visitCharge || 0), 0);
+        setEarnings({ today: todayEarnings, week: weekEarnings, month: monthEarnings });
       } catch (e) {
         console.error(e);
       } finally {
@@ -85,32 +107,50 @@ export default function PartnerDashboardPage() {
   const handleAcceptJob = async (id: number) => {
     const job = assignedJobs.find((j) => j.id === id);
     if (!job) return;
+    const phone = localStorage.getItem("tektonWorkerPhone");
+    if (!phone) return;
     try {
-      const res = await fetch(`/api/appointments/${id}`, {
+      const res = await fetch(`/api/appointments/${id}/partner-update`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-worker-phone": phone,
+        },
         body: JSON.stringify({ status: "Confirmed" }),
       });
-      if (!res.ok) throw new Error("Failed to accept job");
-      // move job to active list with updated status
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to accept job");
+      }
+      // Move job to active list with updated status
       setAssignedJobs((prev) => prev.filter((j) => j.id !== id));
       setActiveJobs((prev) => [...prev, { ...job, status: "Confirmed" }]);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      alert("Could not accept job: " + (e.message || "Unknown error"));
     }
   };
 
   const handleDeclineJob = async (id: number) => {
+    const phone = localStorage.getItem("tektonWorkerPhone");
+    if (!phone) return;
     try {
-      const res = await fetch(`/api/appointments/${id}`, {
+      const res = await fetch(`/api/appointments/${id}/partner-update`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-worker-phone": phone,
+        },
         body: JSON.stringify({ status: "Pending", assignedWorkerId: null }),
       });
-      if (!res.ok) throw new Error("Failed to decline job");
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to decline job");
+      }
       setAssignedJobs((prev) => prev.filter((j) => j.id !== id));
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      alert("Could not decline job: " + (e.message || "Unknown error"));
     }
   };
 
@@ -247,19 +287,19 @@ export default function PartnerDashboardPage() {
                   <div className="flex justify-between items-start">
                     <div>
                       <span className="text-[10px] font-black uppercase bg-slate-800 text-slate-300 px-2 py-0.5 rounded">Task #{job.id}</span>
-                      <h3 className="text-sm font-black text-white mt-2">{job.type} Services</h3>
+                      <h3 className="text-sm font-black text-white mt-2">{job.category} Services</h3>
                       <p className="text-xs text-slate-400 flex items-center gap-1 mt-1">
-                        <Clock className="w-3 h-3 text-yellow-400" /> {job.time}
+                        <Clock className="w-3 h-3 text-yellow-400" /> {job.appointmentDate} at {job.appointmentTime}
                       </p>
                     </div>
                     <div className="text-right">
                       <p className="text-[10px] text-slate-500 uppercase font-bold">Estimated Pay</p>
-                      <p className="text-lg font-black text-emerald-400">₹{job.price}</p>
+                      <p className="text-lg font-black text-emerald-400">₹{job.totalAmount || job.visitCharge}</p>
                     </div>
                   </div>
                   
                   <div className="bg-slate-950 rounded-xl p-3 text-xs border border-white/5">
-                    <p className="text-slate-400 font-medium">📍 {job.address}</p>
+                    <p className="text-slate-400 font-medium">📍 {job.customerAddress}</p>
                   </div>
                   
                   {job.status === "Assigned" ? (
@@ -301,18 +341,18 @@ export default function PartnerDashboardPage() {
                   <div className="flex justify-between items-start">
                     <div>
                       <span className="text-[10px] font-black uppercase bg-slate-800 text-slate-300 px-2 py-0.5 rounded">Task #{job.id}</span>
-                      <h3 className="text-sm font-black text-white mt-2">{job.type} Services</h3>
+                      <h3 className="text-sm font-black text-white mt-2">{job.category} Services</h3>
                       <p className="text-xs text-slate-400 flex items-center gap-1 mt-1">
-                        <Clock className="w-3 h-3 text-yellow-400" /> {job.time}
+                        <Clock className="w-3 h-3 text-yellow-400" /> {job.appointmentDate} at {job.appointmentTime}
                       </p>
                     </div>
                     <div className="text-right">
                       <p className="text-[10px] text-slate-500 uppercase font-bold">Estimated Pay</p>
-                      <p className="text-lg font-black text-emerald-400">₹{job.price}</p>
+                      <p className="text-lg font-black text-emerald-400">₹{job.totalAmount || job.visitCharge}</p>
                     </div>
                   </div>
                   <div className="bg-slate-950 rounded-xl p-3 text-xs border border-white/5">
-                    <p className="text-slate-400 font-medium">📍 {job.address}</p>
+                    <p className="text-slate-400 font-medium">📍 {job.customerAddress}</p>
                   </div>
                   <div className="mt-auto pt-2">
                     <div className="w-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 py-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1">

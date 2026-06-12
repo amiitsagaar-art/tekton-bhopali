@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { workers } from "@/db/schema";
-import { ilike, or, and, desc } from "drizzle-orm";
+import { ilike, or, and, desc, eq } from "drizzle-orm";
+import { verifyAdminToken } from "@/lib/adminAuth";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -9,10 +10,22 @@ export async function GET(request: Request) {
   const location = searchParams.get("location");
   const search = searchParams.get("search");
   const showAll = searchParams.get("all"); // Admin passes all=true
+  const phone = searchParams.get("phone");
+
+  if (showAll === "true" && !phone) {
+    if (!verifyAdminToken(request)) {
+      return NextResponse.json({ error: "Unauthorized. Admin access required." }, { status: 401 });
+    }
+  }
+
 
   try {
     // Attempt standard database query
     let conditions = [];
+
+    if (phone) {
+      conditions.push(eq(workers.phone, phone));
+    }
 
     if (category && category !== "All") {
       conditions.push(ilike(workers.category, `%${category}%`));
@@ -34,8 +47,8 @@ export async function GET(request: Request) {
     }
 
     // Public view only shows Approved workers. Admin sees everything.
-    if (showAll !== "true") {
-      conditions.push(ilike(workers.status, "Approved"));
+    if (showAll !== "true" && !phone) {
+      conditions.push(eq(workers.isApproved, true));
     }
 
     const finalCondition = conditions.length > 0 ? and(...conditions) : undefined;
@@ -64,6 +77,9 @@ export async function POST(request: Request) {
     const preferredZone = body.preferredZone || body.locations || "";
     const experienceYears = body.experienceYears || "";
     const aadharNumber = body.aadharNumber || body.aadhaarUrl || "";
+    const selfieUrl = body.selfieUrl || body.selfie || "";
+    const panUrl = body.panUrl || body.pan || "";
+    const passbookUrl = body.passbookUrl || body.passbook || "";
 
     if (!fullName || !whatsappNumber || !serviceCategory || !preferredZone) {
       return NextResponse.json({ error: "Missing required fields (fullName, whatsappNumber, serviceCategory, preferredZone)." }, { status: 400 });
@@ -98,15 +114,18 @@ export async function POST(request: Request) {
       phone: whatsappNumber,
       category: serviceCategory,
       experienceYears: Number(experienceYears) || 2,
-      basePrice: 49,
+      basePrice: body.basePrice || 49,
       locations: preferredZone.toLowerCase().includes("bhopal") ? preferredZone : `${preferredZone}, Bhopal`,
-      bio: `Professional ${serviceCategory} serving ${preferredZone} zone in Bhopal.`,
+      bio: body.bio || `Professional ${serviceCategory} serving ${preferredZone} zone in Bhopal.`,
       rating: "4.9",
       reviewsCount: 0,
       isVerified: false,
       status: "Pending",
+      isApproved: false,
       aadhaarUrl: aadharNumber || "",
-      selfieUrl: "pending_upload",
+      panUrl: panUrl || "",
+      passbookUrl: passbookUrl || "",
+      selfieUrl: selfieUrl || "",
       avatarUrl: finalAvatarUrl,
     };
 

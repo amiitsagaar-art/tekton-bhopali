@@ -1,9 +1,15 @@
 "use client";
+import TruecallerScript from "./TruecallerScript";
+import { db } from "@/lib/firebase";
+import { collection, doc, addDoc, onSnapshot, query, orderBy, serverTimestamp } from "firebase/firestore";
+import { useToast } from "@/context/ToastContext";
+import { useRouter } from "next/navigation";
+
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import TektonLogo from "@/components/TektonLogo";
-import AIChatbot from "@/components/AIChatbot";
+
 import Footer from "@/components/Footer";
 import BookingModal from "@/components/BookingModal";
 import { registerPushNotifications, addPushListeners, removePushListeners } from "@/utils/pushNotifications";
@@ -61,6 +67,8 @@ interface Worker {
   bio: string;
   isVerified: boolean;
   portfolio?: string[];
+  status?: string;
+  isApproved?: boolean;
 }
 
 interface Appointment {
@@ -123,7 +131,7 @@ const TIME_SLOTS = [
   "Instant (Within 10 mins Arrival)"
 ];
 
-const COUPONS: Record<string, { type: "percent" | "flat"; value: number; desc: string }> = {
+const COUPONS_FALLBACK: Record<string, { type: "percent" | "flat"; value: number; desc: string }> = {
   TEKTON10:  { type: "percent", value: 10,  desc: "10% off on any service" },
   FIRSTBOOK: { type: "flat",    value: 50,  desc: "₹50 off on your first booking" },
   BHOPAL2026:{ type: "flat",    value: 30,  desc: "₹30 off – Bhopal Special" },
@@ -182,6 +190,7 @@ const heroImages = [
 ];
 
 export default function TektonApp() {
+  const router = useRouter();
   const isAdmin = false; // TODO: Replace with actual auth role state
 
   // Navigation & Filtering
@@ -231,6 +240,27 @@ export default function TektonApp() {
     };
   }, []);
 
+  // Expose global triggerBooking for AI Chatbot integration
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      (window as any).tektonTriggerBooking = (service: string, zone?: string | null) => {
+        setSelectedWorkerForBooking(null);
+        setBookingForm((prev) => ({
+          ...prev,
+          category: service || "Plumber",
+          location: zone && zone !== "unspecified" ? zone : (selectedLocation === "All Bhopal (MP)" ? "MP Nagar, Bhopal" : selectedLocation),
+          description: `Requested via AI Chatbot in zone ${zone || 'unspecified'}.`,
+        }));
+        setShowAppointmentModal(true);
+      };
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        delete (window as any).tektonTriggerBooking;
+      }
+    };
+  }, [selectedLocation]);
+
 
   // User Authentication
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -258,13 +288,22 @@ export default function TektonApp() {
   const [isRegistering, setIsRegistering] = useState(false);
   const [registerName, setRegisterName] = useState("");
   const [registerPhone, setRegisterPhone] = useState("");
-  const [registerEmail, setRegisterEmail] = useState("");
   const [registerPassword, setRegisterPassword] = useState("");
-  const [loginEmailInput, setLoginEmailInput] = useState("");
   const [loginPasswordInput, setLoginPasswordInput] = useState("");
   const [registerLocation, setRegisterLocation] = useState("");
   const [loginRole, setLoginRole] = useState<"user" | "vendor">("user");
   const [authLoading, setAuthLoading] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+
+  // Chat drawer state
+  const [chatOpen, setChatOpen] = useState(false);
+  const [activeTicketId, setActiveTicketId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Array<{ id: string; senderId: string; text: string; timestamp: any }>>([]);
+  const [newMessage, setNewMessage] = useState("");
+  const [ticketStatus, setTicketStatus] = useState<string>("assigned");
+  const { addToast } = useToast();
+
+  // Modals & Flows
   const [otpError, setOtpError] = useState("");
   const [requiresPassword, setRequiresPassword] = useState(false);
 
@@ -275,6 +314,7 @@ export default function TektonApp() {
     if (phone.length !== 10) { alert("Please enter a valid 10-digit mobile number."); return; }
     if (!registerLocation) { alert("Please select your Bhopal zone."); return; }
     
+    setIsVerifying(true);
     setAuthLoading(true);
     try {
       const mockEmail = `${phone}@tektonbhopal.com`;
@@ -300,16 +340,19 @@ export default function TektonApp() {
         throw new Error(otpData.error || "Failed to send OTP.");
       }
 
-      if (otpData.otp) {
-        alert(`[Mock Mode] Your OTP verification code is: ${otpData.otp}`);
+      if (otpData.mock) {
+        // Mock mode: SMS not configured. OTP is in server console only.
+        showToast("📱 OTP sent! (Demo mode — check server console for code)");
+      } else {
+        showToast("📱 6-Digit OTP sent to your phone!");
       }
-      showToast("📱 6-Digit OTP sent to your phone!");
       setIsOtpSent(true);
     } catch (err: any) {
       console.error("SMS Registration Error:", err);
       alert(`Error: ${err.message || "Failed to send OTP. Please try again."}`);
     } finally {
       setAuthLoading(false);
+      setIsVerifying(false);
     }
   };
 
@@ -320,22 +363,28 @@ export default function TektonApp() {
       return;
     }
 
+    setIsVerifying(true);
     setAuthLoading(true);
     try {
       // If logging in as vendor, verify they are registered first
       if (loginRole === "vendor") {
-        const workersRes = await fetch("/api/workers");
+        const workersRes = await fetch(`/api/workers?phone=${phone}`);
         const allWorkers = await workersRes.json();
-        const partner = allWorkers.find((w: any) => w.phone === phone);
+        if (!workersRes.ok || !Array.isArray(allWorkers)) {
+          alert(`⚠️ Error checking partner registration: ${allWorkers?.error || "Failed to retrieve partner profile."}`);
+          setAuthLoading(false);
+          return;
+        }
+        
+        const partner = allWorkers[0];
         if (!partner) {
           alert("⚠️ This mobile number is not registered as a Partner.");
           setAuthLoading(false);
           return;
         }
         
-        const partnerStatus = partner.status?.toLowerCase();
-        if (partnerStatus === "pending" || partnerStatus === "rejected") {
-          alert(`Your partner application is currently ${partner.status}. Please wait for admin approval.`);
+        if (!partner.isApproved) {
+          alert(`Your partner application is currently ${partner.status || "Pending"}. Please wait for admin approval.`);
           setAuthLoading(false);
           return;
         }
@@ -352,16 +401,19 @@ export default function TektonApp() {
         throw new Error(otpData.error || "Failed to send OTP.");
       }
 
-      if (otpData.otp) {
-        alert(`[Mock Mode] Your OTP verification code is: ${otpData.otp}`);
+      if (otpData.mock) {
+        // Mock mode: SMS not configured. OTP is in server console only.
+        showToast("📱 OTP sent! (Demo mode — check server console for code)");
+      } else {
+        showToast("📱 6-Digit OTP sent to your phone!");
       }
-      showToast("📱 6-Digit OTP sent to your phone!");
       setIsOtpSent(true);
     } catch (err: any) {
       console.error("SMS Login Error:", err);
       alert(`Error: ${err.message || "Failed to send OTP."}`);
     } finally {
       setAuthLoading(false);
+      setIsVerifying(false);
     }
   };
 
@@ -464,13 +516,22 @@ export default function TektonApp() {
           setIsOtpSent(false);
           setOtpCode("");
           showToast(`🚪 Welcome back, ${verifiedUser.name}!`);
+          // Success vibration
+          if (typeof window !== 'undefined' && navigator.vibrate) {
+            navigator.vibrate(50);
+          }        
         }
       }
     } catch (err: any) {
       console.error("OTP Verification Error:", err);
       setOtpError(err.message || "Incorrect OTP. Please try again.");
+      // Error vibration
+      if (typeof window !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate([100, 50, 100]);
+      }
     } finally {
       setAuthLoading(false);
+      setIsVerifying(false);
     }
   };
 
@@ -478,11 +539,35 @@ export default function TektonApp() {
   // State Data
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [recentWorks, setRecentWorks] = useState<Array<{
+    id: number;
+    title: string;
+    category: string;
+    location: string;
+    imageUrl: string;
+  }>>([]);
   const [reviewingAppId, setReviewingAppId] = useState<number | null>(null);
+
+  // Fetch recent works from API on mount
+  useEffect(() => {
+    const fetchRecentWorks = async () => {
+      try {
+        const res = await fetch("/api/recent-works");
+        if (res.ok) {
+          const data = await res.json();
+          setRecentWorks(data);
+        }
+      } catch (e) {
+        console.error("Failed to fetch recent works:", e);
+      }
+    };
+    fetchRecentWorks();
+  }, []);
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState("");
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const [loadingWorkers, setLoadingWorkers] = useState(true);
+
 
   // Modals & Flows
   const [showAppointmentModal, setShowAppointmentModal] = useState(false);
@@ -539,16 +624,43 @@ export default function TektonApp() {
     setNotifications(prev => [n, ...prev].slice(0, 20));
   };
 
-  const handleApplyCoupon = () => {
+  const handleApplyCoupon = async () => {
     const code = couponCode.trim().toUpperCase();
     if (!code) { setCouponError("Enter a coupon code."); return; }
-    const coupon = COUPONS[code];
-    if (!coupon) { setCouponError("❌ Invalid coupon code."); setCouponDiscount(0); setCouponApplied(false); return; }
-    setCouponApplied(true);
-    setCouponDiscount(coupon.value);
-    setCouponDesc(coupon.desc);
-    setCouponError("");
-    showToast(`🎉 Coupon applied! ${coupon.desc}`);
+    
+    try {
+      // Validate coupon from DB via API
+      const res = await fetch("/api/pricing/validate-coupon", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+      const data = await res.json();
+      
+      if (res.ok && data.valid) {
+        setCouponApplied(true);
+        setCouponDiscount(data.discountValue);
+        setCouponDesc(data.description || `${data.isPercentage ? data.discountValue + "%" : "₹" + data.discountValue} off`);
+        setCouponError("");
+        showToast(`🎉 Coupon applied! ${data.description || code}`);
+      } else {
+        // Fallback: check local list (for demo/offline mode)
+        const localCoupon = COUPONS_FALLBACK[code];
+        if (localCoupon) {
+          setCouponApplied(true);
+          setCouponDiscount(localCoupon.value);
+          setCouponDesc(localCoupon.desc);
+          setCouponError("");
+          showToast(`🎉 Coupon applied! ${localCoupon.desc}`);
+        } else {
+          setCouponError("❌ Invalid or expired coupon code.");
+          setCouponDiscount(0);
+          setCouponApplied(false);
+        }
+      }
+    } catch {
+      setCouponError("⚠️ Could not validate coupon. Try again.");
+    }
   };
 
   const removeCoupon = () => {
@@ -611,17 +723,19 @@ export default function TektonApp() {
         const res = await fetch("/api/workers");
         const data = await res.json();
         
-        // Auto trigger seed if empty or contains non-Bhopal data or is missing new premium categories
+        // Auto-seed protection: only trigger once per session (not on every page load)
+        const alreadySeeded = sessionStorage.getItem("tektonSeeded");
         const hasNonBhopal = Array.isArray(data) && data.some(w => w.locations.includes("Delhi NCR") || w.locations.includes("Mumbai"));
         const hasNewCategories = Array.isArray(data) && data.some(w => w.category === "Tank Cleaning");
         
-        if (hasNonBhopal || !hasNewCategories || !Array.isArray(data) || data.length === 0) {
+        if (!alreadySeeded && (hasNonBhopal || !hasNewCategories || !Array.isArray(data) || data.length === 0)) {
           await fetch("/api/seed", { method: "POST" });
+          sessionStorage.setItem("tektonSeeded", "1"); // Mark: done for this session
           const freshRes = await fetch("/api/workers");
           const freshData = await freshRes.json();
           setWorkers(Array.isArray(freshData) ? freshData : []);
         } else {
-          setWorkers(data);
+          setWorkers(Array.isArray(data) ? data : []);
         }
       } catch (err) {
         console.error("Failed fetching workers:", err);
@@ -630,15 +744,38 @@ export default function TektonApp() {
       }
     };
 
+    // Load reviews from DB (server) + merge with local saved ones
+    const loadReviews = async () => {
+      try {
+        const res = await fetch("/api/reviews");
+        if (res.ok) {
+          const dbReviews = await res.json();
+          if (Array.isArray(dbReviews) && dbReviews.length > 0) {
+            // Map DB reviews to display format
+            const mapped = dbReviews.map((r: any) => ({
+              name: r.customerName || "Anonymous",
+              location: r.location || "Bhopal",
+              rating: r.rating || 5,
+              text: r.comment || "",
+              service: r.category || "General",
+              date: r.createdAt ? new Date(r.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "Recently",
+            }));
+            // Merge DB reviews with hardcoded customer reviews (DB first)
+            setReviewsList(prev => {
+              const merged = [...mapped, ...CUSTOMER_REVIEWS];
+              return merged.slice(0, 12); // Show max 12
+            });
+          }
+        }
+      } catch (e) {
+        // Fallback to default CUSTOMER_REVIEWS (already set as initial state)
+        console.warn("Could not load DB reviews, using defaults");
+      }
+    };
+
     initializeData();
     fetchAppointments();
-
-    const savedReviews = localStorage.getItem("tektonLocalReviews");
-    if (savedReviews) {
-      try {
-        setReviewsList(JSON.parse(savedReviews));
-      } catch (e) {}
-    }
+    loadReviews();
 
     const savedPhone = localStorage.getItem("tektonUserPhone");
     const storedPin = localStorage.getItem("tektonAppPin");
@@ -671,6 +808,24 @@ export default function TektonApp() {
     const savedLoc = localStorage.getItem("tektonUserLocation");
     if (savedLoc) {
       setNewFeedbackLocation(savedLoc);
+    }
+  }, []);
+
+  // Auto trigger booking modal from URL query parameters (?service=<Name> or ?book=true)
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const serviceParam = params.get("service");
+      const bookParam = params.get("book");
+      if (serviceParam) {
+        setBookingForm(prev => ({
+          ...prev,
+          category: decodeURIComponent(serviceParam)
+        }));
+        setShowAppointmentModal(true);
+      } else if (bookParam === "true") {
+        setShowAppointmentModal(true);
+      }
     }
   }, []);
 
@@ -784,6 +939,48 @@ export default function TektonApp() {
     setShowAppointmentModal(true);
   };
 
+  // Handle URL search parameters (like ?service=Plumber or ?book=true) on load/navigation
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const serviceParam = params.get("service");
+      const bookParam = params.get("book");
+
+      if (serviceParam) {
+        // Find if service exists in CATEGORIES
+        const matchedCategory = CATEGORIES.find(
+          (cat) => cat.name.toLowerCase() === serviceParam.toLowerCase()
+        );
+        const catName = matchedCategory ? matchedCategory.name : "Plumber";
+        setSelectedCategory(catName);
+        triggerBooking(null, catName);
+        
+        // Clear query params to prevent re-opening modal on refresh/back
+        const newParams = new URLSearchParams(window.location.search);
+        newParams.delete("service");
+        newParams.delete("book");
+        const newUrl = newParams.toString() ? `${window.location.pathname}?${newParams.toString()}` : window.location.pathname;
+        window.history.replaceState({}, "", newUrl);
+      } else if (bookParam === "true" || bookParam) {
+        // If booking is requested without a specific category, or with a specific category in book
+        let catName = "Plumber";
+        if (typeof bookParam === "string" && bookParam !== "true") {
+          const matchedCategory = CATEGORIES.find(
+            (cat) => cat.name.toLowerCase() === bookParam.toLowerCase()
+          );
+          if (matchedCategory) catName = matchedCategory.name;
+        }
+        triggerBooking(null, catName);
+
+        // Clear query params
+        const newParams = new URLSearchParams(window.location.search);
+        newParams.delete("book");
+        const newUrl = newParams.toString() ? `${window.location.pathname}?${newParams.toString()}` : window.location.pathname;
+        window.history.replaceState({}, "", newUrl);
+      }
+    }
+  }, []);
+
   // Submit appointment / enquiry
   const handleBookAppointment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -896,6 +1093,7 @@ export default function TektonApp() {
 
   return (
     <div className="w-full min-h-screen overflow-x-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-100 flex flex-col font-sans pb-24 relative selection:bg-yellow-400 selection:text-slate-950">
+        
       
       {/* LEFT SIDEBAR (MOBILE DRAWER) */}
       <div className={`fixed inset-0 z-50 transition-opacity duration-300 ${isSidebarOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
@@ -986,6 +1184,13 @@ export default function TektonApp() {
         </div>
       )}
 
+      {/* Shimmer Loading Overlay */}
+      {isVerifying && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-white/90 backdrop-blur-md animate-pulse">
+          <div className="w-16 h-16 border-4 border-yellow-400 rounded-full animate-spin"></div>
+        </div>
+      )}
+
       {/* STICKY HEADER */}
       <header className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-white/10 shadow-lg">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -1045,7 +1250,19 @@ export default function TektonApp() {
                   title="Select Bhopal service zone"
                   aria-label="Bhopal Hub Zone"
                   value={selectedLocation}
-                  onChange={(e) => setSelectedLocation(e.target.value)}
+                  onChange={(e) => {
+                    const zone = e.target.value;
+                    setSelectedLocation(zone);
+                    // Update URL query param without full reload
+                    const params = new URLSearchParams(window.location.search);
+                    if (zone && zone !== "All Bhopal (MP)") {
+                      params.set("zone", zone);
+                    } else {
+                      params.delete("zone");
+                    }
+                    const newPath = `${window.location.pathname}?${params.toString()}`;
+                    router.replace(newPath, { scroll: false });
+                  }}
                   className="bg-transparent font-bold text-white text-xs focus:outline-none cursor-pointer pr-1 pt-0.5"
                 >
                   {BHOPAL_LOCATIONS.map((loc) => (
@@ -1479,7 +1696,7 @@ export default function TektonApp() {
         <div className="flex border-b border-white/10 space-x-6 text-sm font-bold overflow-x-auto scrollbar-hide">
           <button
             onClick={() => setCurrentTab("services")}
-            className={`pb-3 shrink-0 relative transition ${ currentTab === "services" ? "text-yellow-450 border-b-2 border-yellow-450" : "text-slate-400 hover:text-slate-200" } text-slate-900 bg-white placeholder-slate-400`}
+            className={`pb-3 shrink-0 relative transition ${ currentTab === "services" ? "text-yellow-450 border-b-2 border-yellow-450" : "text-slate-400 hover:text-slate-200" }`}
           >
             Bhopal Experts & Enquire
           </button>
@@ -2541,24 +2758,10 @@ export default function TektonApp() {
                         <span className="flex-shrink mx-4 text-slate-400 text-xs font-bold">OR</span>
                         <div className="flex-grow border-t border-slate-200"></div>
                       </div>
+                      <div className="flex items-center justify-center my-4">
+                        <TruecallerScript />
+                      </div>
 
-                      <button
-                        onClick={async (e) => {
-                          e.preventDefault();
-                          if (registerName.trim().length < 2) { alert("Please enter your full name."); return; }
-                          const phone = registerPhone.replace(/\D/g, "");
-                          if (phone.length !== 10) { alert("Please enter a valid 10-digit mobile number."); return; }
-                          if (!registerLocation) { alert("Please select your Bhopal zone."); return; }
-                          
-                          setOtpCode("123456");
-                          setIsOtpSent(true);
-                          await handleVerifyOtp("123456", phone, "register");
-                        }}
-                        disabled={authLoading}
-                        className="w-full bg-slate-900 hover:bg-slate-800 disabled:bg-slate-350 disabled:cursor-not-allowed text-white font-extrabold text-sm px-4 py-3 rounded-xl shadow-md transition mt-1 border border-slate-700 flex items-center justify-center gap-2"
-                      >
-                        ⚡ Direct Register (Bypass OTP)
-                      </button>
                     </>
                   ) : (
                     <>
@@ -2730,24 +2933,9 @@ export default function TektonApp() {
                         <div className="flex-grow border-t border-slate-200"></div>
                       </div>
 
-                      <button
-                        onClick={async (e) => {
-                          e.preventDefault();
-                          const phone = loginPhoneInput.replace(/\D/g, "");
-                          if (phone.length !== 10) {
-                            alert("Please enter a valid 10-digit mobile number.");
-                            return;
-                          }
-                          
-                          setOtpCode("123456");
-                          setIsOtpSent(true);
-                          await handleVerifyOtp("123456", phone, "login");
-                        }}
-                        disabled={authLoading}
-                        className="w-full bg-slate-900 hover:bg-slate-800 disabled:bg-slate-350 disabled:cursor-not-allowed text-white font-extrabold text-sm px-4 py-3 rounded-xl shadow-md transition mt-1 border border-slate-700 flex items-center justify-center gap-2"
-                      >
-                        ⚡ Direct Login (Bypass OTP)
-                      </button>
+                      <div className="flex items-center justify-center my-4">
+                        <TruecallerScript />
+                      </div>
                     </>
                   ) : (
                     <>
@@ -2857,7 +3045,6 @@ export default function TektonApp() {
         </div>
       )}
 
-
       {/* RECENT WORK GALLERY SECTION */}
       <div className="bg-slate-50 border-t border-slate-200 py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -2874,55 +3061,55 @@ export default function TektonApp() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            
-            {/* Project 1 */}
-            <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_15px_40px_rgba(248,203,70,0.15)] hover:-translate-y-2 transition-all duration-500 group">
-              <div className="h-56 overflow-hidden relative anim-pulse-slow">
-                <img src="https://images.unsplash.com/photo-1504307651254-35680f356dfd?q=80&w=800&auto=format&fit=crop" className="w-full h-full object-cover group-hover:scale-105 transition-all duration-500" alt="Heavy Metal Gate Work" />
-                <span className="absolute top-3 left-3 bg-slate-900/80 backdrop-blur-md text-white text-[9px] font-bold px-2.5 py-1 rounded-md">Govindpura Industrial</span>
-              </div>
-              <div className="p-5">
-                <h4 className="font-bold text-sm text-slate-900">Heavy Industrial Gate Metal Fabrication</h4>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed">Heavy-duty iron gate welding, alignment tuning, and anti-rust base painting completed for commercial workshop.</p>
-                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-[10px] text-slate-400 font-bold">Category: Fabrication / Welding</span>
-                  <span className="text-xs font-black text-emerald-650">₹14,999 Total Cost</span>
+            {(recentWorks.length > 0 ? recentWorks : [
+              {
+                id: 1,
+                title: "Heavy Industrial Gate Metal Fabrication",
+                category: "Fabrication / Welding",
+                location: "Govindpura Industrial",
+                imageUrl: "https://images.unsplash.com/photo-1504307651254-35680f356dfd?q=80&w=800&auto=format&fit=crop",
+                cost: "₹14,999"
+              },
+              {
+                id: 2,
+                title: "Premium Main Door Polish & Lock Installation",
+                category: "Carpenter / Woodwork",
+                location: "Minal Residency",
+                imageUrl: "https://images.unsplash.com/photo-1622372738946-62e02505feb3?q=80&w=800&auto=format&fit=crop",
+                cost: "₹2,499"
+              },
+              {
+                id: 3,
+                title: "Modular Kitchen Woodwork & Fitting Setup",
+                category: "Carpenter / Modular",
+                location: "Arera Colony",
+                imageUrl: "https://images.unsplash.com/photo-1556910103-1c02745a8281?q=80&w=800&auto=format&fit=crop",
+                cost: "₹18,500"
+              }
+            ]).map((work) => (
+              <div key={work.id} className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_15px_40px_rgba(248,203,70,0.15)] hover:-translate-y-2 transition-all duration-500 group flex flex-col justify-between">
+                <div>
+                  <div className="h-56 overflow-hidden relative">
+                    <img src={work.imageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-all duration-500" alt={work.title} />
+                    <span className="absolute top-3 left-3 bg-slate-900/80 backdrop-blur-md text-white text-[9px] font-bold px-2.5 py-1 rounded-md">{work.location}</span>
+                  </div>
+                  <div className="p-5">
+                    <h4 className="font-bold text-sm text-slate-900">{work.title}</h4>
+                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                      {work.title} project successfully completed in Bhopal by our skilled professionals.
+                    </p>
+                  </div>
+                </div>
+                <div className="p-5 pt-0">
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                    <span className="text-[10px] text-slate-400 font-bold">Category: {work.category}</span>
+                    {"cost" in work && (
+                      <span className="text-xs font-black text-emerald-650">{work.cost} Total Cost</span>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-
-            {/* Project 2 */}
-            <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_15px_40px_rgba(248,203,70,0.15)] hover:-translate-y-2 transition-all duration-500 group">
-              <div className="h-56 overflow-hidden relative">
-                <img src="https://images.unsplash.com/photo-1622372738946-62e02505feb3?q=80&w=800&auto=format&fit=crop" className="w-full h-full object-cover group-hover:scale-105 transition-all duration-500" alt="Modular Woodwork" />
-                <span className="absolute top-3 left-3 bg-slate-900/80 backdrop-blur-md text-white text-[9px] font-bold px-2.5 py-1 rounded-md">Minal Residency</span>
-              </div>
-              <div className="p-5">
-                <h4 className="font-bold text-sm text-slate-900">Premium Main Door Polish & Lock Installation</h4>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed">Fine teakwood door lock carving, handle placement, and 3-layer protective premium teak varnish finish.</p>
-                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-[10px] text-slate-400 font-bold">Category: Carpenter / Woodwork</span>
-                  <span className="text-xs font-black text-emerald-650">₹2,499 Total Cost</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Project 3 */}
-            <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_15px_40px_rgba(248,203,70,0.15)] hover:-translate-y-2 transition-all duration-500 group">
-              <div className="h-56 overflow-hidden relative">
-                <img src="https://images.unsplash.com/photo-1556910103-1c02745a8281?q=80&w=800&auto=format&fit=crop" className="w-full h-full object-cover group-hover:scale-105 transition-all duration-500" alt="Complete Modular Kitchen Woodwork" />
-                <span className="absolute top-3 left-3 bg-slate-900/80 backdrop-blur-md text-white text-[9px] font-bold px-2.5 py-1 rounded-md">Arera Colony</span>
-              </div>
-              <div className="p-5">
-                <h4 className="font-bold text-sm text-slate-900">Modular Kitchen Woodwork & Fitting Setup</h4>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed">Complete hydraulic hinge installation, basket alignments, chimney fitting, and soft-close cabinet assembly.</p>
-                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-[10px] text-slate-400 font-bold">Category: Carpenter / Modular</span>
-                  <span className="text-xs font-black text-emerald-650">₹18,500 Total Cost</span>
-                </div>
-              </div>
-            </div>
-
+            ))}
           </div>
         </div>
       </div>
@@ -3102,14 +3289,7 @@ export default function TektonApp() {
         <span className="group-hover:rotate-12 transition-transform duration-300">👷‍♂️</span>
       </button>
 
-      {/* AI CHATBOT COMPONENT */}
-      <AIChatbot 
-        userContext={{
-          isLoggedIn: isLoggedIn,
-          name: isLoggedIn ? userName || "Rahul" : "Guest",
-          location: selectedLocation || "Bhopal"
-        }} 
-      />
+
 
       <Footer />
       {/* Permanent invisible reCAPTCHA parent container mounted outside conditional modals */}

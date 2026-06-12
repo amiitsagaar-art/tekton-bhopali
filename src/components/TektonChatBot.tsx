@@ -5,6 +5,7 @@ import {
   MessageSquare, X, Send, Paperclip, AlertTriangle,
   CheckCircle, RotateCcw, Headphones, ChevronDown, Mic
 } from "lucide-react";
+import { SITE_CONFIG } from "@/config/site";
 
 interface Message {
   id: string;
@@ -14,6 +15,12 @@ interface Message {
   isEmergency?: boolean;
   isConfirmed?: boolean;
   timestamp: Date;
+  // Optional intent metadata attached to bot messages
+  intent?: {
+    type: string;
+    service: string;
+    zone: string | null;
+  };
 }
 
 type BookingStep = "idle" | "diagnostic" | "confirm_service" | "date" | "time" | "address" | "done";
@@ -45,6 +52,62 @@ export default function TektonChatBot() {
   const [isLoading, setIsLoading] = useState(false);
   const [unreadCount, setUnreadCount] = useState(1);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const rec = new SpeechRecognition();
+        rec.continuous = false;
+        rec.interimResults = false;
+        rec.lang = "hi-IN";
+        
+        rec.onstart = () => {
+          setIsListening(true);
+        };
+        
+        rec.onresult = (event: any) => {
+          const transcript = event.results[0][0].transcript;
+          if (transcript) {
+            setInput(prev => {
+              const space = prev && !prev.endsWith(" ") ? " " : "";
+              return prev + space + transcript;
+            });
+          }
+        };
+        
+        rec.onerror = (err: any) => {
+          console.error("[Speech Recognition Error]:", err);
+          setIsListening(false);
+        };
+        
+        rec.onend = () => {
+          setIsListening(false);
+        };
+        
+        recognitionRef.current = rec;
+      }
+    }
+  }, []);
+
+  const toggleListening = () => {
+    if (!recognitionRef.current) {
+      alert("Voice typing is not supported in this browser. Try Google Chrome or Microsoft Edge.");
+      return;
+    }
+    
+    if (isListening) {
+      recognitionRef.current.stop();
+    } else {
+      try {
+        recognitionRef.current.start();
+      } catch (err) {
+        console.error("Failed to start speech recognition:", err);
+      }
+    }
+  };
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -63,6 +126,18 @@ export default function TektonChatBot() {
     return text
       .replace(/\*(.*?)\*/g, "<strong>$1</strong>")
       .replace(/\n/g, "<br/>");
+  };
+
+  // -------------------------------------------------------------------
+  //  Parse intent metadata from the AI reply (if present)
+  // -------------------------------------------------------------------
+  const parseIntentFromReply = (reply: string): { cleanText: string; intent?: Message["intent"] } => {
+    const intentRegex = /\[INTENT:\s*([\w-]+)\s*\|\s*SERVICE:\s*([\w\s-]+)\s*\|\s*ZONE:\s*([\w\s-]+)\]$/i;
+    const match = reply.match(intentRegex);
+    if (!match) return { cleanText: reply };
+    const [, type, service, zone] = match;
+    const cleanText = reply.replace(intentRegex, "").trimEnd();
+    return { cleanText, intent: { type, service: service.trim(), zone: zone.trim() } };
   };
 
   const addMessage = (role: "user" | "bot", text: string, extras?: Partial<Message>) => {
@@ -89,7 +164,7 @@ export default function TektonChatBot() {
     setIsLoading(true);
 
     try {
-      const res = await fetch("/api/chat", {
+      const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -97,6 +172,7 @@ export default function TektonChatBot() {
           step,
           bookingData,
           hasImage: !!imageBase64,
+          image: imageBase64 || null,
           userProfile: {
             name: typeof window !== "undefined" ? localStorage.getItem("tektonUserName") || "" : "",
             phone: typeof window !== "undefined" ? localStorage.getItem("tektonUserPhone") || "" : "",
@@ -105,15 +181,27 @@ export default function TektonChatBot() {
         }),
       });
 
-      const data = await res.json();
+      if (!response.ok) {
+        const errorData = await response.json();
+        addMessage("bot", errorData.reply ?? "Sorry, something went wrong. Please try again later.");
+        return;
+      }
+
+      const data = await response.json();
 
       // Update state
       setStep(data.nextStep || "idle");
       setBookingData(data.bookingData || {});
 
-      addMessage("bot", data.reply, {
+      const { cleanText, intent: parsedIntent } = parseIntentFromReply(data.reply);
+      const finalIntent = data.intent || parsedIntent || null;
+      if (finalIntent && finalIntent.zone === "unspecified") {
+        finalIntent.zone = null;
+      }
+      addMessage("bot", cleanText, {
         isEmergency: data.isEmergency,
         isConfirmed: data.isConfirmed,
+        ...(finalIntent ? { intent: finalIntent } : {}),
       });
 
       // Log CRM payload in console for backend integration
@@ -248,6 +336,23 @@ export default function TektonChatBot() {
                         <img src={msg.imageUrl} alt="Uploaded" className="w-full rounded-xl mb-2 max-h-36 object-cover" />
                       )}
                       <span dangerouslySetInnerHTML={{ __html: formatText(msg.text) }} />
+                      
+                      {/* Booking intent button */}
+                      {msg.intent?.type === "BOOKING" && (
+                        <button
+                          className="mt-2 w-full px-3.5 py-2.5 bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-lg hover:bg-amber-300 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200"
+                          onClick={() => {
+                            if (typeof window !== "undefined" && (window as any).tektonTriggerBooking) {
+                              (window as any).tektonTriggerBooking(msg.intent?.service, msg.intent?.zone);
+                            } else {
+                              console.error("Booking helper not loaded");
+                            }
+                          }}
+                        >
+                          Book Verified {msg.intent.service} {msg.intent.zone ? `in ${msg.intent.zone}` : ""} Now
+                        </button>
+                      )}
+
                       <p className={`text-[9px] mt-1 ${msg.role === "user" ? "text-amber-800" : "text-slate-500"}`}>
                         {msg.timestamp.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
                       </p>
@@ -305,6 +410,18 @@ export default function TektonChatBot() {
                     onChange={handleImageUpload}
                   />
 
+                  {/* Mic Button for Speech to Text */}
+                  <button
+                    type="button"
+                    onClick={toggleListening}
+                    className={`transition-colors shrink-0 ${
+                      isListening ? "text-red-500 animate-pulse" : "text-slate-400 hover:text-amber-400"
+                    }`}
+                    title={isListening ? "Listening... click to stop" : "Bolkar type karein (Voice typing)"}
+                  >
+                    <Mic className="w-4 h-4" />
+                  </button>
+
                   <input
                     ref={inputRef}
                     type="text"
@@ -336,7 +453,7 @@ export default function TektonChatBot() {
                 <div className="flex items-center justify-between mt-2 px-1">
                   <p className="text-[9px] text-slate-600">📍 Tekton Bhopal • Visit ₹99</p>
                   <button
-                    onClick={() => window.open("tel:+91XXXXXXXXXX")}
+                    onClick={() => window.open(`tel:${SITE_CONFIG.phone.replace(/\s+/g, "")}`)}
                     className="flex items-center gap-1 text-[9px] text-amber-400 hover:text-amber-300 font-bold transition-colors"
                   >
                     <Headphones className="w-3 h-3" />

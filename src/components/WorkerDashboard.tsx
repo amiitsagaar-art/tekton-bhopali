@@ -68,10 +68,16 @@ export default function WorkerDashboard() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/workers?all=true`);
+      const res = await fetch(`/api/workers?phone=${loginPhone}`);
       const allWorkers = await res.json();
       
-      const foundWorker = allWorkers.find((w: Worker) => w.phone === loginPhone);
+      if (!res.ok || !Array.isArray(allWorkers)) {
+        setError(allWorkers?.error || "Failed to retrieve worker profile.");
+        setLoading(false);
+        return;
+      }
+      
+      const foundWorker = allWorkers[0];
       if (foundWorker) {
         if (foundWorker.status === "Blocked") {
           setError("Your account has been blocked by the Admin. Please contact support.");

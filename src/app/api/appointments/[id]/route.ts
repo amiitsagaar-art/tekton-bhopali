@@ -12,7 +12,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   try {
     const { id } = await params;
     const body = await request.json();
-    const { status, assignedWorkerId, description, appointmentDate, appointmentTime } = body;
+    const { status, assignedWorkerId, description, appointmentDate, appointmentTime, extraCharge, paymentStatus } = body;
     // Extract numeric IDs, stripping any prefixes (e.g., "TEK-4" -> 4)
     const numericId = Number(id.replace(/\D/g, ""));
     const numericWorkerId = assignedWorkerId ? Number(String(assignedWorkerId).replace(/\D/g, "")) : null;
@@ -23,6 +23,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (description !== undefined) updateFields.description = description;
     if (appointmentDate !== undefined) updateFields.appointmentDate = appointmentDate;
     if (appointmentTime !== undefined) updateFields.appointmentTime = appointmentTime;
+    if (paymentStatus !== undefined) updateFields.paymentStatus = paymentStatus;
+
+    if (extraCharge !== undefined) {
+      const existingApp = await db.select().from(appointments).where(eq(appointments.id, numericId)).limit(1);
+      const visitCharge = existingApp[0]?.visitCharge || 0;
+      const extraVal = Number(extraCharge) || 0;
+      updateFields.extraCharge = extraVal;
+      updateFields.totalAmount = visitCharge + extraVal;
+    }
 
     // Perform DB update strictly
     const updated = await db

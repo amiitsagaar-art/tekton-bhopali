@@ -1,16 +1,21 @@
-const CACHE_NAME = "tekton-cache-v1";
+const CACHE_NAME = "tekton-cache-v2";
 const urlsToCache = [
   "/",
-  "/index.html",
   "/manifest.json",
-  "/favicon.ico"
+  "/partner-manifest.json"
 ];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
-        return cache.addAll(urlsToCache);
+        return Promise.allSettled(
+          urlsToCache.map((url) => {
+            return cache.add(url).catch((err) => {
+              console.warn("Failed to cache: " + url, err);
+            });
+          })
+        );
       })
   );
 });

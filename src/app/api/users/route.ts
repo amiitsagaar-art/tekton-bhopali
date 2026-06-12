@@ -7,27 +7,44 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const email = searchParams.get("email");
+    const phone = searchParams.get("phone");
 
-    if (!email) {
-      // Fetch all users strictly from database
-      const allUsers = await db
+    // Lookup by phone (used by profile page OTP login)
+    if (phone) {
+      const result = await db
         .select()
         .from(users)
-        .orderBy(desc(users.createdAt));
-      return NextResponse.json(allUsers);
+        .where(eq(users.phone, phone.trim()))
+        .limit(1);
+
+      if (result && result.length > 0) {
+        return NextResponse.json({ exists: true, user: result[0] });
+      } else {
+        return NextResponse.json({ exists: false, error: "User not found" }, { status: 404 });
+      }
     }
 
-    const result = await db
+    // Lookup by email
+    if (email) {
+      const result = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, email.trim().toLowerCase()))
+        .limit(1);
+
+      if (result && result.length > 0) {
+        return NextResponse.json({ exists: true, user: result[0] });
+      } else {
+        return NextResponse.json({ exists: false, error: "User not found" }, { status: 404 });
+      }
+    }
+
+    // No filter — fetch all users (admin only typically)
+    const allUsers = await db
       .select()
       .from(users)
-      .where(eq(users.email, email))
-      .limit(1);
-
-    if (result && result.length > 0) {
-      return NextResponse.json({ exists: true, user: result[0] });
-    } else {
-      return NextResponse.json({ exists: false, error: "User not found" }, { status: 404 });
-    }
+      .orderBy(desc(users.createdAt));
+    return NextResponse.json(allUsers);
   } catch (error: any) {
     console.error("[DATABASE ERROR] Querying users failed:", error);
     return NextResponse.json({ error: "Database error: " + error.message }, { status: 500 });

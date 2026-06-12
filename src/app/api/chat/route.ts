@@ -1,120 +1,128 @@
-import { streamText } from 'ai';
-import { google } from '@ai-sdk/google';
+import { NextResponse } from "next/server";
 
-// Allow streaming responses up to 30 seconds
-export const maxDuration = 30;
-
-const SYSTEM_PROMPT = `
-You are a highly professional, helpful, and empathetic AI Customer Support Assistant for "Tekton Bhopal".
-Tekton is a premium marketplace for home services (Plumbing, Electrical, Carpentry, Painting, Cleaning, etc.) operating EXCLUSIVELY in Bhopal, Madhya Pradesh.
-
-CRITICAL CHAT FLOW & SMART RULES:
-
-0. INITIAL GREETING (WHEN USER SAYS HI/HELLO):
-- If the user simply says "Hi", "Hello", "Namaste", or just opens the chat without stating a problem, DO NOT apologize and DO NOT trigger the frustration rule.
-- Greet them warmly and simply ask how you can help. Example: "Namaste! 🙏 Main Tekton Bhopal ka AI Assistant hoon. Aaj main aapke ghar ki repair ya maintenance mein kya madad kar sakta hoon?"
-
-1. STRICT FRUSTRATION RULE (ONLY WHEN EXPLICITLY ANGRY):
-- ONLY use the "Arey nahi nahi..." apology IF the user EXPLICITLY uses frustrated words like "baat nahi karoge", "bekar", "robot", or "kuch nahi aata". Never use it for normal greetings or "pata nahi".
-
-2. STRICT AUTHENTICATION & PROFILE MEMORY (MUST VERIFY BEFORE BOOKING):
-- You will receive the user's current status in the system context as either [Auth: Guest] or [Auth: Logged In].
-- IF [Auth: Guest]: You are allowed to analyze their photo, diagnose the problem, and quote the ₹99 visit charge. HOWEVER, when they say "Yes, book it", you MUST STOP the flow and tell them: "Aapki booking confirm karne ke liye aur technician ko assign karne ke liye, kripya pehle apne account mein Login karein ya naya account banayein. Uske baad hum Date aur Time fix kar lenge." (Do NOT schedule or ask for Date/Time until they log in).
-- IF [Auth: Logged In]: The context will provide their Name, User ID, and Address. Greet them enthusiastically by name ("Namaste [Name] ji!"). Check their problem, and directly ask if the service is required at their previously saved address or a new location in Bhopal, then proceed to the scheduling step.
-
-9. POST-BOOKING SUPPORT & TRACKING:
-- If the context says [Active Booking: Yes, Status: On the Way], and the user asks about their technician, inform them politely about the status.
-- Allow users to easily Reschedule or Cancel an existing booking without arguing.
-
-10. COMPLAINT & EMOTION HANDLING:
-- If the user uses angry words, complains about a past service, or types in ALL CAPS, immediately DROP the sales tone. 
-- Apologize deeply, assure them it's a "High Priority" issue, and state that a Senior Manager will call them within 15 minutes. Output a CRM note with "ticket_type": "URGENT_COMPLAINT".
-
-11. SMART NEGOTIATION (DISCOUNTING):
-- If the user hesitates, says "No", or finds the ₹99 charge high, offer them a one-time welcome discount. Example: "Kyunki aap hamare special customer hain, main visit charge par ₹20 ka discount apply kar sakta hu. Kya ab proceed karein?" (Do this ONLY ONCE per conversation).
-
-12. LANGUAGE MIRRORING:
-- Always mirror the user's language script. If they type in English (e.g., "My AC is broken"), reply in English. If they type in Hinglish ("Mera AC kharab hai"), reply in Hinglish. If they type in pure Hindi ("मेरा एसी खराब है"), reply in pure Hindi script.
-
-13. HANDLING UNKNOWN PROBLEMS (THE "PATA NAHI" RULE):
-- If the user says they don't know the exact issue (e.g., "Pata nahi kya hua", "Just stopped working"), DO NOT say "I understand" or "I have diagnosed it." 
-- Instead, be comforting and say that it's completely normal and the technician will figure it out. Example: "Koi baat nahi, kabhi-kabhi achanak aisi problem aa jati hai. Hamare expert aakar properly check kar lenge ki kahan fault hai."
-
-14. GRACEFUL EXIT (HANDLING "NO" OR "LATER"):
-- If the user refuses to book, says "Nahi", "Baad mein", or wants to cancel the chat, DO NOT ask them to repeat their problem or start over.
-- Accept their answer politely, leave the door open, and end the conversation smoothly. Example: "Bilkul! Aap aaram se soch lijiye. Jab bhi aapko technician ki zaroorat ho, main yahi hoon. Aapka din shubh ho! 😊"
-
-Ensure your responses are concise, polite, and fully adhere to these rules.
-`;
+// Bhopal zones list for detection
+const BHOPAL_ZONES = [
+  { name: "MP Nagar", keywords: ["mp nagar", "m.p. nagar", "mpnagar", "m p nagar"] },
+  { name: "Kolar", keywords: ["kolar", "kolar road", "kolarroad"] },
+  { name: "Arera Colony", keywords: ["arera", "arera colony", "areracolony"] },
+  { name: "Indrapuri", keywords: ["indrapuri", "indrapury"] },
+  { name: "Ayodhya Bypass", keywords: ["ayodhya", "ayodhya bypass", "ayodhyabypass"] },
+  { name: "Awadhpuri", keywords: ["awadhpuri", "awadhpury"] },
+  { name: "Gulmohar", keywords: ["gulmohar", "gulmohar colony"] },
+  { name: "Bairagarh", keywords: ["bairagarh", "bairagar", "lalghati"] },
+  { name: "Chhahni", keywords: ["chhahni", "chhani", "chhaney"] },
+  { name: "TT Nagar", keywords: ["tt nagar", "t.t. nagar", "ttnagar", "new market"] },
+];
 
 export async function POST(req: Request) {
   try {
-    const { messages, userContext } = await req.json();
-    const lastMessage = messages[messages.length - 1].content.toLowerCase();
+    const body = await req.json();
+    const userMessage = body.message || "";
+    const cleanInput = userMessage.trim().toLowerCase();
 
-    // If API key is missing or placeholder, use a MOCK STREAM to show the user how it works
-    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "YOUR_API_KEY_HERE") {
-      
-      let mockReply = "Main aapki kaise madad kar sakta hoon? (Note: This is a Mock AI. Please add your Gemini API Key in .env to enable full AI capabilities.)";
-      
-      // Implement basic rules via mock for demonstration
-      if (lastMessage.includes("hi") || lastMessage.includes("hello") || lastMessage.includes("namaste")) {
-        mockReply = "Namaste! 🙏 Main Tekton Bhopal ka AI Assistant hoon. Aaj main aapke ghar ki repair ya maintenance mein kya madad kar sakta hoon?";
-      } else if (lastMessage.includes("bekar") || lastMessage.includes("robot") || lastMessage.includes("gussa")) {
-        mockReply = "Arey nahi nahi, main maafi chahta hoon! Main samajh sakta hoon ki aapko pareshani ho rahi hai. Ye ek 'High Priority' issue hai. Ek Senior Manager aapko agle 15 minute mein call karenge.";
-      } else if (lastMessage.includes("pata nahi") || lastMessage.includes("don't know")) {
-        mockReply = "Koi baat nahi, kabhi-kabhi achanak aisi problem aa jati hai. Hamare expert aakar properly check kar lenge ki kahan fault hai.";
-      } else if (lastMessage.includes("book") || lastMessage.includes("yes")) {
-        if (!userContext?.isLoggedIn) {
-          mockReply = "Aapki booking confirm karne ke liye aur technician ko assign karne ke liye, kripya pehle apne account mein Login karein ya naya account banayein. Uske baad hum Date aur Time fix kar lenge.";
-        } else {
-          mockReply = `Namaste ${userContext.name} ji! Kya aapko service apne saved address (${userContext.location}, Bhopal) par chahiye ya kisi naye address par?`;
-        }
+    // 1. Detect Bhopal Zone
+    let detectedZone: string | null = null;
+    for (const zone of BHOPAL_ZONES) {
+      if (zone.keywords.some(kw => cleanInput.includes(kw))) {
+        detectedZone = zone.name;
+        break;
       }
-
-      const stream = new ReadableStream({
-        start(controller) {
-          const encoder = new TextEncoder();
-          const words = mockReply.split(" ");
-          let i = 0;
-          const interval = setInterval(() => {
-            if (i < words.length) {
-              const textChunk = words[i] + " ";
-              controller.enqueue(encoder.encode(`0:${JSON.stringify(textChunk)}\n`));
-              i++;
-            } else {
-              clearInterval(interval);
-              controller.close();
-            }
-          }, 50); // Simulate streaming delay
-        }
-      });
-
-      return new Response(stream, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
     }
 
-    // REAL AI LOGIC (Requires valid GEMINI_API_KEY)
-    const contextPrompt = `
-[SYSTEM DYNAMIC CONTEXT INJECTED FOR THIS REQUEST]
-User Auth Status: ${userContext?.isLoggedIn ? '[Auth: Logged In]' : '[Auth: Guest]'}
-${userContext?.isLoggedIn ? `User Name: ${userContext.name}
-User Address: ${userContext.location} (Bhopal)` : ''}
-[END DYNAMIC CONTEXT]
-`;
+    let reply = "";
+    let intent: any = null;
 
-    const coreMessages = [
-      { role: 'system', content: SYSTEM_PROMPT + '\n\n' + contextPrompt },
-      ...messages,
-    ];
+    // Helper to pick random element
+    const pickRandom = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
 
-    const result = streamText({
-      model: google('gemini-1.5-flash'),
-      messages: coreMessages,
+    // 2. Classify Message Intent
+    if (cleanInput.match(/(plumber|paani|pani|toti|totiya|leak|pipe|nali|tapak|flush|sink|washroom|toilet|tap|nal|shower|gyser|geyser|drain|clog|leakage|water|tanki|tank)/i)) {
+      intent = { type: "BOOKING", service: "Plumber", zone: detectedZone };
+      
+      const zoneText = detectedZone ? `bhiya ${detectedZone} me` : "colony me";
+      const responses = [
+        `Hao bhiya! 💧 Paani beh riya hai kya ghar mein? Bade pareshan dikh rahe ho. Hum turant top-class plumber bhej rahe hain ${zoneText}. Niche confirm karo, 10 minute me banda hazir!`,
+        `Arey miya, paani ki nali ka lafda hai kya? Tension mat paalo ustaad! Humare paas ek number plumber hain jo turant leakage fix kar denge. Niche button daba ke confirm karo!`,
+        `Hao bhiya, sink tapak riya hai ya tanki bhar gayi hai? Chinta mat karo, Tekton ke pass verified plumbers hain jo abhi rawana ho jayenge. Click karo aur confirm karo bhiya!`
+      ];
+      reply = pickRandom(responses);
+
+    } else if (cleanInput.match(/(electrician|wiring|jal|light|pankha|switch|board|bijli|fan|cooler|heater|motor|current|shock|mcb|fuse|plug|short\s*circuit|bulb|led|power|socket|meter)/i)) {
+      intent = { type: "BOOKING", service: "Electrician", zone: detectedZone };
+      
+      const zoneText = detectedZone ? `bhiya ${detectedZone} me` : "ustaad";
+      const responses = [
+        `Arey ustaad! ⚡ Bijli ka lafda lag riya hai kya? MCB trip ho rahi hai ya current maar raha hai? Chinta mat karo, top electrician abhi bhejte hain ${zoneText}. Niche confirm karo!`,
+        `Hao bhiya, switchboard jal gaya ya fan nahi chal riya? Ek number professional ustaad ko rawana kar rahe hain jo sab wiring fix kar dega. Turant confirm karo bhiya!`,
+        `Miya, short circuit ka darr hai kya? Ghabrao mat, bijli ka kaam bada sensitive hota hai. Humare certified expert ustaad 10 minute me pahunchenge. Confirm karo jaldi!`
+      ];
+      reply = pickRandom(responses);
+
+    } else if (cleanInput.match(/(carpenter|wood|furniture|darwaza|tala|sofa|lakdi|door|table|chair|bed|almirah|almirhi|lock|handle|cabinet|drawer|window|khidki|chaukhat|chabi)/i)) {
+      intent = { type: "BOOKING", service: "Carpenter", zone: detectedZone };
+      
+      const zoneText = detectedZone ? `bhiya ${detectedZone} me` : "colony me";
+      const responses = [
+        `Hao bhiya! 🔨 Darwaze ka lock kharab hai ya furniture banana hai? Carpenter ki zaroorat hai toh batao, ek ustaad abhi rawana kar rahe hain ${zoneText}. Niche confirm karo bhiya!`,
+        `Arey miya, cupboard (almirah) ki chabi kharab ho gayi ya wooden kaam karwana hai? Fikar nahi karo ustaad, badhiya carpenter bhejte hain abhi. Click karo aur confirm karo!`,
+        `Hao bhiya, chaukhat toot gayi ya handle dheela hai? Tekton ke top carpenters abhi rawana kar rahe hain. Confirm karke booking complete karo bhiya!`
+      ];
+      reply = pickRandom(responses);
+
+    } else if (cleanInput.match(/(paint|color|rang|painter|deewar|diwar|wall|putty|distemper|brush|color*wash|safeda|punaee|punaai)/i)) {
+      intent = { type: "BOOKING", service: "Painter", zone: detectedZone };
+      
+      const responses = [
+        `Miya, deewar ko naya look dena hai ya putty lagwani hai? 🎨 Sabse sasta aur aala rang-rogain karne wala painter abhi bhejte hain. Niche confirm karo ustaad!`,
+        `Hao bhiya, ghar me rang-punaee (paint) karwani hai kya? Tyohar aa raha hai, chinta mat karo ustaad, badhiya painter bhejenge. Niche click karke confirm karo!`,
+        `Arey ustaad, deewar par dampness hai ya putty jhad rahe hai? Sahi ustaad painter abhi bhejte hain jo sab chamka dega. Turant booking confirm karo!`
+      ];
+      reply = pickRandom(responses);
+
+    } else if (cleanInput.match(/(ac|cooler|fridge|refrigerator|thanda|cooling|filter|compressor|gas\s*filling|geyser)/i)) {
+      intent = { type: "BOOKING", service: "AC & Appliances", zone: detectedZone };
+      
+      const responses = [
+        `Hao bhiya! ❄️ AC thanda nahi kar riya ya fridge me cooling ka lafda hai? AC & Appliances ke expert ustaad abhi bhejenge. Niche confirm karo ustaad!`,
+        `Miya, garmi bahut badh gayi hai aur AC ka filter kharab ho gaya kya? Tension nahi lene ka bhiya, service wale ko abhi rawana karte hain. Click karke confirm karo!`,
+        `Arey ustaad, washing machine ya geyser me takleef hai? Fikar not bhiya, appliances repair ka master technician abhi pahunchega. Booking confirm karo!`
+      ];
+      reply = pickRandom(responses);
+
+    } else if (cleanInput.match(/(hi|hello|namaste|hey|hlo|pranam|ram\s*ram|salam|bhiya|ustaad|miya|yo|ola|suno|help|madad|kya\s*hua|kaise\s*ho|kya\s*haal|sab\s*badhiya)/i)) {
+      const responses = [
+        `Namaste ustaad! 🙏 Main Tekton Bhopal ka AI Assistant hoon. Bataiye, aaj kounsa kaam karwana hai miya? Plumber 💧, Electrician ⚡, Carpenter 🔨, Painter 🎨, aur AC/Fridge Repair ❄️ sab available hain ustaad!`,
+        `Hao bhiya! Kaise ho miya? Tekton Assistant par aapka swagat hai. Ghar ka koi bhi lafda ho—bijli, paani, furniture, ya painting—batao bhiya, abhi banda rawana karenge!`,
+        `Ram Ram bhiya! 🙏 Salam ustaad! Bataiye kya seva karein aaj? Plumber, electrician, carpenter sab 10 minute me Bhopal me doorstep par haazir ho jayenge!`,
+        `Sab badhiya hai bhiya! 🕺 Main Tekton AI Assistant hoon. Bataiye ghar me koi lafda ho toh—Plumber, Electrician, Carpenter sab ready hain. Kya kaam karwana hai?`
+      ];
+      reply = pickRandom(responses);
+
+    } else {
+      const responses = [
+        `Arey miya, baat poori samajh nahi aayi ustaad. Ek baar saaf-saaf batao bhiya—Paani (Plumbing) ka lafda hai, Bijli (Electrician) ka, Furniture (Carpenter) ka, ya Deewar rangwani (Painter) hai? Tum bas bolo, bhejte hain banda!`,
+        `Hao bhiya, thoda khul ke bataiye kya dikkat hai? Switchboard kharab hai, pipe leak ho riya hai, ya lock lagwana hai? Sahi bataoge toh sahi ustaad bhej paunga bhiya!`,
+        `Miya, baat thodi dukhdayi lag rahi hai par clear nahi ho paayi. Plumber, Electrician, Carpenter, ya Painter—kise bhejna hai? Niche options me se select kar lo ya type karke batao ustaad!`
+      ];
+      reply = pickRandom(responses);
+    }
+
+    return NextResponse.json({
+      reply,
+      intent,
+      nextStep: intent ? "confirm_service" : "idle",
+      bookingData: intent ? { category: intent.service, location: intent.zone || "MP Nagar" } : {},
+      isEmergency: false,
+      isConfirmed: false
     });
 
-    return result.toTextStreamResponse();
-  } catch (error) {
-    console.error('Chat API Error:', error);
-    return new Response(JSON.stringify({ error: 'Failed to process chat request' }), { status: 500 });
+  } catch (error: any) {
+    console.error("Bhopali AI Engine Simulator Error:", error);
+    return NextResponse.json({
+      reply: "Hao bhiya, server me thoda lafda chal riya hai. Dobara message daalo.",
+      intent: null,
+      nextStep: "idle",
+      bookingData: {}
+    }, { status: 500 });
   }
 }

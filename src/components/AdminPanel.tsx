@@ -343,14 +343,24 @@ export default function AdminPanel() {
     u.location.toLowerCase().includes(userSearch.toLowerCase())
   );
 
-  // Admin Login Verification check
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  // Admin Login Verification check — calls server API (no hardcoded passwords)
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (loginId.trim() === "admin" && (password === "tektonbhopal" || password === "tekton123")) {
-      setIsAuthenticated(true);
-      setLoginError(null);
-    } else {
-      setLoginError("Invalid credentials. Please enter ID: admin & Password: tektonbhopal");
+    try {
+      const res = await fetch("/api/auth/verify-admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: password }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setIsAuthenticated(true);
+        setLoginError(null);
+      } else {
+        setLoginError("Invalid credentials. Please check your admin password.");
+      }
+    } catch (err) {
+      setLoginError("Server error. Please try again.");
     }
   };
 

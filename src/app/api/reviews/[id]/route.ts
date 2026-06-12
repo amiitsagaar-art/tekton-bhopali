@@ -17,7 +17,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       return NextResponse.json({ error: "Review ID is required" }, { status: 400 });
     }
 
-    await db.delete(reviews).where(eq(reviews.id, parseInt(id, 10)));
+    await db.delete(reviews).where(eq(reviews.id, id));
     return NextResponse.json({ success: true, message: "Review deleted successfully" });
   } catch (error: any) {
     console.error("[DELETE REVIEW ERROR]", error);

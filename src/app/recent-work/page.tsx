@@ -9,6 +9,7 @@ import {
   TrendingUp, Award, Clock3, Users, DollarSign
 } from "lucide-react";
 import TektonLogo from "@/components/TektonLogo";
+import Header from "@/components/Header";
 
 // Predefined list of 15 mock completed jobs with realistic Bhopal contexts
 const COMPLETED_JOBS = [
@@ -301,35 +302,7 @@ export default function RecentWorkPage() {
       <div className="absolute bottom-1/4 left-10 w-[30rem] h-[30rem] bg-blue-600/10 rounded-full blur-[100px] ambient-orb -z-10"></div>
 
       {/* HEADER NAVBAR */}
-      <header className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-xl border-b border-slate-800 shadow-lg">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <Link href="/" className="flex items-center space-x-2.5 hover:scale-105 transition-all duration-300">
-              <TektonLogo className="w-9 h-9 shrink-0" />
-              <div className="flex flex-col text-left justify-center">
-                <span className="text-lg font-black tracking-tight text-white leading-none mb-0.5">
-                  TEKTON
-                </span>
-                <span className="text-[9px] font-black text-amber-400 tracking-wider ml-0.5 leading-none uppercase">
-                  Bhopal
-                </span>
-              </div>
-            </Link>
-
-            <nav className="hidden md:flex items-center space-x-2 ml-6">
-              <Link href="/" className="px-3 py-1.5 text-xs font-bold text-slate-400 hover:text-white transition">Home</Link>
-              <Link href="/services" className="px-3 py-1.5 text-xs font-bold text-slate-400 hover:text-white transition">Services</Link>
-              <Link href="/recent-work" className="px-3 py-1.5 text-xs font-black text-amber-400 border border-amber-400/20 bg-amber-400/5 rounded-full transition">Recent Work Done</Link>
-              <Link href="/about" className="px-3 py-1.5 text-xs font-bold text-slate-400 hover:text-white transition">About Us</Link>
-              <Link href="/contact" className="px-3 py-1.5 text-xs font-bold text-slate-400 hover:text-white transition">Contact</Link>
-            </nav>
-          </div>
-
-          <Link href="/" className="btn-3d bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 font-black text-xs px-4 py-2 rounded-xl shadow-md border border-amber-400 flex items-center gap-1.5">
-            Book Service Now <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
-      </header>
+      <Header />
 
       {/* HERO BANNER SECTION */}
       <div className="relative py-12 px-4 border-b border-slate-800 text-center">

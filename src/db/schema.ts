@@ -1,4 +1,4 @@
-import { pgTable, serial, varchar, text, integer, boolean, timestamp, numeric } from "drizzle-orm/pg-core";
+import { pgTable, serial, varchar, text, integer, boolean, timestamp, numeric, uuid } from "drizzle-orm/pg-core";
 
 export const workers = pgTable("workers", {
   id: serial("id").primaryKey(),
@@ -14,6 +14,7 @@ export const workers = pgTable("workers", {
   bio: text("bio"),
   isVerified: boolean("is_verified").notNull().default(true),
   status: varchar("status", { length: 50 }).notNull().default("Approved"),
+  isApproved: boolean("is_approved").notNull().default(false),
   aadhaarUrl: text("aadhaar_url"),
   panUrl: text("pan_url"),
   passbookUrl: text("passbook_url"),
@@ -36,6 +37,9 @@ export const appointments = pgTable("appointments", {
   paymentStatus: varchar("payment_status", { length: 50 }).notNull().default("Pending"), // Added for refund logic
   cancellationReason: text("cancellation_reason"), // Added for cancellation tracking
   transactionId: varchar("transaction_id", { length: 255 }),
+  visitCharge: integer("visit_charge").notNull().default(0),
+  extraCharge: integer("extra_charge").notNull().default(0),
+  totalAmount: integer("total_amount").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -68,11 +72,10 @@ export const payments = pgTable("payments", {
 
 // NEW TABLE: Verified Reviews
 export const reviews = pgTable("reviews", {
-  id: serial("id").primaryKey(),
-  appointmentId: integer("appointment_id").references(() => appointments.id).notNull().unique(),
-  workerId: integer("worker_id").references(() => workers.id).notNull(),
-  customerId: integer("customer_id").references(() => users.id),
-  rating: integer("rating").notNull(), // 1 to 5
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  vendorId: integer("vendor_id").references(() => workers.id).notNull(),
+  rating: integer("rating").notNull(), // 1 to 5, enforce in app logic
   comment: text("comment"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -122,4 +125,11 @@ export const coupons = pgTable("coupons", {
   description: text("description"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// TABLE: Dynamic System Settings (Toggles like enableCashPayment, etc.)
+export const systemSettings = pgTable("system_settings", {
+  key: varchar("key", { length: 100 }).primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

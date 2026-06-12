@@ -1,6 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { Hammer, MapPin, Mail, Phone } from "lucide-react";
+import { SITE_CONFIG } from "@/config/site";
 
 export default function Footer() {
   return (
@@ -21,10 +22,10 @@ export default function Footer() {
               Revolutionizing the blue-collar service industry in Bhopal. Instant dispatch, verified pros, and transparent pricing.
             </p>
             <div className="flex space-x-4">
-              <a href="#" className="text-slate-400 hover:text-amber-400 font-bold text-xs transition">FACEBOOK</a>
-              <a href="#" className="text-slate-400 hover:text-amber-400 font-bold text-xs transition">TWITTER</a>
-              <a href="#" className="text-slate-400 hover:text-amber-400 font-bold text-xs transition">INSTAGRAM</a>
-              <a href="#" className="text-slate-400 hover:text-amber-400 font-bold text-xs transition">LINKEDIN</a>
+              <a href={SITE_CONFIG.social.facebook} target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-amber-400 font-bold text-xs transition">FACEBOOK</a>
+              <a href={SITE_CONFIG.social.twitter} target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-amber-400 font-bold text-xs transition">TWITTER</a>
+              <a href={SITE_CONFIG.social.instagram} target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-amber-400 font-bold text-xs transition">INSTAGRAM</a>
+              <a href={SITE_CONFIG.social.linkedin} target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-amber-400 font-bold text-xs transition">LINKEDIN</a>
             </div>
           </div>
 
@@ -44,9 +45,9 @@ export default function Footer() {
           <div>
             <h3 className="text-white font-bold mb-4 uppercase tracking-wider text-sm">Legal</h3>
             <ul className="space-y-2 text-sm">
-              <li><Link href="#" className="hover:text-amber-400 transition">Privacy Policy</Link></li>
-              <li><Link href="#" className="hover:text-amber-400 transition">Terms of Service</Link></li>
-              <li><Link href="#" className="hover:text-amber-400 transition">Refund Policy</Link></li>
+              <li><Link href="/privacy-policy" className="hover:text-amber-400 transition">Privacy Policy</Link></li>
+              <li><Link href="/terms" className="hover:text-amber-400 transition">Terms of Service</Link></li>
+              <li><Link href="/refund-policy" className="hover:text-amber-400 transition">Refund Policy</Link></li>
               <li><Link href="/partner-join" className="hover:text-amber-400 transition">Become a Partner</Link></li>
             </ul>
           </div>
@@ -57,15 +58,15 @@ export default function Footer() {
             <ul className="space-y-3 text-sm">
               <li className="flex items-start space-x-3">
                 <MapPin className="w-5 h-5 text-amber-400 shrink-0" />
-                <span>123 Tekton Hub, MP Nagar Zone 1, Bhopal, MP 462011</span>
+                <span>{SITE_CONFIG.address}</span>
               </li>
               <li className="flex items-center space-x-3">
                 <Phone className="w-5 h-5 text-amber-400 shrink-0" />
-                <span>+91 98765 43210</span>
+                <a href={`tel:${SITE_CONFIG.phone.replace(/\s+/g, "")}`} className="hover:text-amber-400 transition">{SITE_CONFIG.phone}</a>
               </li>
               <li className="flex items-center space-x-3">
                 <Mail className="w-5 h-5 text-amber-400 shrink-0" />
-                <span>support@tektonbhopal.com</span>
+                <a href={`mailto:${SITE_CONFIG.email}`} className="hover:text-amber-400 transition">{SITE_CONFIG.email}</a>
               </li>
             </ul>
           </div>

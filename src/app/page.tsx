@@ -1,4 +1,5 @@
 import TektonApp from "@/components/TektonApp";
+import TektonChatBot from "@/components/TektonChatBot";
 
 
 export const metadata = {
@@ -7,5 +8,10 @@ export const metadata = {
 };
 
 export default function HomePage() {
-  return <TektonApp />;
+  return (
+    <>
+      <TektonApp />
+      <TektonChatBot />
+    </>
+  );
 }

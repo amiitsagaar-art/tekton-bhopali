@@ -10,7 +10,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
   const { id } = await params;
   const body = await request.json();
-  const { name, phone, category, experienceYears, basePrice, locations, bio, avatarUrl, isVerified, status, portfolio } = body;
+  const { name, phone, category, experienceYears, basePrice, locations, bio, avatarUrl, isVerified, status, portfolio, isApproved } = body;
   
   const updateFields: any = {};
   if (name !== undefined) updateFields.name = name;
@@ -24,6 +24,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (isVerified !== undefined) updateFields.isVerified = Boolean(isVerified);
   if (status !== undefined) updateFields.status = status;
   if (portfolio !== undefined) updateFields.portfolio = portfolio;
+  if (isApproved !== undefined) updateFields.isApproved = Boolean(isApproved);
 
   try {
     const updated = await db

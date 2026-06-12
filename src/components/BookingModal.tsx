@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { X, ArrowRight, ArrowLeft, Calendar, Clock, User, Phone, MapPin, CheckCircle2, Ticket, CreditCard, Sparkles } from "lucide-react";
+import { SITE_CONFIG } from "@/config/site";
 
 interface Worker {
   id: number;
@@ -87,7 +88,10 @@ export default function BookingModal({
   const [couponDesc, setCouponDesc] = useState("");
   const [couponError, setCouponError] = useState("");
   const [couponLoading, setCouponLoading] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<"Cash" | "UPI" | "Card">("Cash");
+  const [paymentMethod, setPaymentMethod] = useState<"Cash" | "UPI" | "Card">(SITE_CONFIG.enableCashPayment ? "Cash" : "UPI");
+  const [copied, setCopied] = useState(false);
+  const [upiTransactionId, setUpiTransactionId] = useState("");
+  const [cashEnabled, setCashEnabled] = useState(SITE_CONFIG.enableCashPayment);
 
   // Load profile + API price on open
   useEffect(() => {
@@ -123,6 +127,21 @@ export default function BookingModal({
           }
         })
         .catch(() => {}); // silently fallback to prop basePrice
+
+      // Fetch dynamic system settings (like enableCashPayment toggle)
+      fetch("/api/settings")
+        .then(r => r.json())
+        .then(data => {
+          if (data.success && data.settings && data.settings.enableCashPayment !== undefined) {
+            const isCashOn = data.settings.enableCashPayment === "true";
+            setCashEnabled(isCashOn);
+            // If Cash is disabled and current selected method is Cash, switch to UPI
+            if (!isCashOn) {
+              setPaymentMethod(prev => prev === "Cash" ? "UPI" : prev);
+            }
+          }
+        })
+        .catch(() => {});
     }
   }, [isOpen, serviceName]);
 
@@ -262,6 +281,17 @@ export default function BookingModal({
 
     if (paymentMethod === "Cash") {
       await submitBooking(null);
+      return;
+    }
+
+    if (paymentMethod === "UPI") {
+      const utr = upiTransactionId.trim();
+      if (!utr || !/^\d{12}$/.test(utr)) {
+        alert("Please enter a valid 12-digit UPI Transaction UTR Number.");
+        setIsSubmitting(false);
+        return;
+      }
+      await submitBooking(utr);
       return;
     }
 
@@ -678,28 +708,127 @@ export default function BookingModal({
                 </label>
                 
                 <div className="grid grid-cols-3 gap-2">
-                  {(["Cash", "UPI", "Card"] as const).map((method) => {
-                    const iconMap = { Cash: "💵", UPI: "📱", Card: "💳" };
-                    const labelMap = { Cash: "Cash", UPI: "UPI / QR", Card: "Card" };
-                    const isSelected = paymentMethod === method;
-                    return (
-                      <button
-                        key={method}
-                        type="button"
-                        onClick={() => setPaymentMethod(method)}
-                        className={`p-2.5 rounded-xl border text-[10px] font-black flex flex-col items-center gap-1.5 transition ${
-                          isSelected 
-                            ? "bg-yellow-400/15 border-yellow-400 text-yellow-400" 
-                            : "bg-slate-950/60 border-white/10 text-slate-400 hover:bg-slate-800"
-                        }`}
-                      >
-                        <span className="text-base">{iconMap[method]}</span>
-                        <span>{labelMap[method]}</span>
-                      </button>
-                    );
-                  })}
+                  {(["Cash", "UPI", "Card"] as const)
+                    .map((method) => {
+                      const iconMap = { Cash: "💵", UPI: "📱", Card: "💳" };
+                      const labelMap = { Cash: "Cash", UPI: "UPI / QR", Card: "Card" };
+                      const isSelected = paymentMethod === method;
+                      const isCashDisabled = method === "Cash" && !cashEnabled;
+                      return (
+                        <button
+                          key={method}
+                          type="button"
+                          disabled={isCashDisabled}
+                          onClick={() => setPaymentMethod(method)}
+                          className={`p-2.5 rounded-xl border text-[10px] font-black flex flex-col items-center gap-1.5 transition relative ${
+                            isCashDisabled
+                              ? "bg-slate-900/40 border-white/5 text-slate-600 cursor-not-allowed opacity-50"
+                              : isSelected 
+                                ? "bg-yellow-400/15 border-yellow-400 text-yellow-400" 
+                                : "bg-slate-950/60 border-white/10 text-slate-400 hover:bg-slate-800"
+                          }`}
+                        >
+                          <span className="text-base">{iconMap[method]}</span>
+                          <span>{labelMap[method]}</span>
+                          {isCashDisabled && (
+                            <span className="absolute -top-1.5 -right-1 bg-rose-500/90 text-[8px] text-white px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider scale-90">
+                              Offline
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
                 </div>
               </div>
+
+              {/* UPI Payment Details Section */}
+              {paymentMethod === "UPI" && (
+                <div className="bg-slate-950 border border-purple-500/30 rounded-2xl p-4 space-y-4 animate-slide-up">
+                  <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                    <span className="text-xs font-black uppercase text-purple-400 tracking-wider">
+                      📱 Direct PhonePe / UPI Payment
+                    </span>
+                    <span className="text-[9px] bg-purple-500/20 text-purple-300 font-bold px-2 py-0.5 rounded">
+                      Zero Fees
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-slate-355 leading-relaxed text-slate-300">
+                    Scan the QR code below using GPay, PhonePe, Paytm, or any UPI app to pay <strong className="text-yellow-450 text-yellow-400">₹{finalPrice}</strong>.
+                  </p>
+
+                  {/* QR Code Display */}
+                  <div className="flex flex-col items-center justify-center p-3 bg-white rounded-xl max-w-[210px] mx-auto border border-purple-500/20 shadow-inner">
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(
+                        `upi://pay?pa=${SITE_CONFIG.upi.id}&pn=${encodeURIComponent(
+                          SITE_CONFIG.upi.name
+                        )}&am=${finalPrice}&cu=INR&tn=${encodeURIComponent(
+                          `Tekton ${serviceName}`
+                        )}`
+                      )}`}
+                      alt="UPI Payment QR Code"
+                      className="w-40 h-40 object-contain"
+                    />
+                    <span className="text-[10px] font-black text-slate-800 uppercase tracking-widest mt-1.5">
+                      Scan to Pay
+                    </span>
+                  </div>
+
+                  {/* UPI ID Copy Box */}
+                  <div className="bg-slate-900 border border-white/5 p-2.5 rounded-xl flex items-center justify-between">
+                    <div className="overflow-hidden">
+                      <span className="text-[9px] text-slate-500 uppercase block font-bold">UPI ID</span>
+                      <code className="text-[11px] font-mono text-white select-all font-bold block truncate max-w-[150px]" title={SITE_CONFIG.upi.id}>{SITE_CONFIG.upi.id}</code>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(SITE_CONFIG.upi.id);
+                        setCopied(true);
+                        setTimeout(() => setCopied(false), 2000);
+                      }}
+                      className="text-[10px] font-black uppercase bg-purple-500/10 hover:bg-purple-500/25 border border-purple-500/30 text-purple-400 px-3 py-1.5 rounded-lg transition shrink-0"
+                    >
+                      {copied ? "Copied!" : "Copy"}
+                    </button>
+                  </div>
+
+                  {/* Mobile Deep Link Button */}
+                  <div className="md:hidden">
+                    <a
+                      href={`upi://pay?pa=${SITE_CONFIG.upi.id}&pn=${encodeURIComponent(
+                        SITE_CONFIG.upi.name
+                      )}&am=${finalPrice}&cu=INR&tn=${encodeURIComponent(
+                        `Tekton ${serviceName}`
+                      )}`}
+                      className="w-full bg-purple-600 hover:bg-purple-500 text-white font-black text-xs uppercase tracking-wider py-3 rounded-xl transition flex items-center justify-center space-x-1.5 shadow-md text-center"
+                    >
+                      <span>⚡ Pay via UPI App</span>
+                    </a>
+                  </div>
+
+                  {/* UTR Input Field */}
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                      Enter 12-Digit UPI Transaction UTR Number *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      maxLength={12}
+                      pattern="\d{12}"
+                      placeholder="e.g. 612849502934"
+                      value={upiTransactionId}
+                      onChange={(e) => setUpiTransactionId(e.target.value.replace(/\D/g, "").substring(0, 12))}
+                      className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white font-mono placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-purple-500 transition tracking-widest text-center"
+                    />
+                    <span className="text-[9px] text-slate-500 block italic leading-snug">
+                      Enter the UTR reference number from your receipt to verify the transaction.
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {/* Price Calculation Card */}
               <div className="bg-slate-950/60 rounded-2xl border border-white/5 p-4 text-xs space-y-2">

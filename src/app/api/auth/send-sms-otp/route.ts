@@ -125,6 +125,8 @@ export async function POST(request: Request) {
     console.log(`[OTP DEBUG] Generated OTP for ${cleanPhone}: ${otp}`);
 
     const apiKey = process.env.SMS_API_KEY;
+    const isDev = process.env.NODE_ENV === "development" || !process.env.VERCEL_ENV;
+
     if (!apiKey) {
       console.warn("⚠️ SMS_API_KEY environment variable is not configured. Falling back to mock mode.");
       return NextResponse.json({
@@ -155,7 +157,6 @@ export async function POST(request: Request) {
   } catch (error: any) {
     console.error("🔥 Detailed SMS OTP Send Failure Log:", error);
     
-    // Graceful fallback if anything fails during execution
     if (otp) {
       return NextResponse.json({
         success: true,

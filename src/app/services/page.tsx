@@ -1,6 +1,21 @@
 import React from "react";
 import Link from "next/link";
-import { Hammer, Sparkles, Wrench, Zap, Paintbrush, HardHat, Briefcase, MapPin, ArrowRight, Camera, Building2 } from "lucide-react";
+import {
+  Hammer,
+  Sparkles,
+  Wrench,
+  Zap,
+  Paintbrush,
+  HardHat,
+  Briefcase,
+  MapPin,
+  ArrowRight,
+  Camera,
+  Building2,
+  Droplets,
+  LayoutDashboard,
+  ShieldCheck
+} from "lucide-react";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 
@@ -12,11 +27,14 @@ const CATEGORIES = [
   { name: "Civil Architect", icon: HardHat, desc: "Tile fixing, minor masonry, wall plastering", price: "Starting ₹599" },
   { name: "Civil Construction", icon: Building2, desc: "Bricklaying, wall construction, concrete mixing, and renovations", price: "Starting ₹799" },
   { name: "Cleaning Service", icon: Sparkles, desc: "Deep cleaning for bathrooms, kitchens, full house", price: "Starting ₹999" },
+  { name: "Tank Cleaning", icon: Droplets, desc: "Water tank cleaning, disinfection, and vacuuming", price: "Starting ₹499" },
+  { name: "Interior Design", icon: LayoutDashboard, desc: "Modular kitchen, false ceiling, complete room makeover", price: "Starting ₹2499" },
+  { name: "Exterior Design", icon: Building2, desc: "Facade elevation, wall cladding, garden landscaping", price: "Starting ₹2999" },
   { name: "AC & Appliances", icon: Briefcase, desc: "AC servicing, gas filling, washing machine repair", price: "Starting ₹349" },
   { name: "Washing Machine & Fridge", icon: Wrench, desc: "Servicing and repair for all top brands", price: "Visit Charge ₹99" },
-  { name: "Car Washing", icon: Sparkles, desc: "Doorstep Complete Car Wash", price: "₹149 (was ₹199)" },
-  { name: "Bike Washing", icon: Sparkles, desc: "Doorstep Complete Bike Wash", price: "₹59 (was ₹99)" },
   { name: "CCTV Cameras", icon: Camera, desc: "Installation, repairs, and full security setup", price: "Starting ₹499" },
+  { name: "Pest Control", icon: ShieldCheck, desc: "Cockroach control, termite treatment, bed bug removal", price: "Starting ₹599" },
+  { name: "Car Wash", icon: Droplets, desc: "Doorstep Complete Car Wash & Vacuuming", price: "Starting ₹149" },
 ];
 
 export default function ServicesPage() {
@@ -47,7 +65,7 @@ export default function ServicesPage() {
                 <p className="text-sm text-slate-400 mb-6 line-clamp-2">{cat.desc}</p>
                 <div className="flex items-center justify-between mt-auto">
                   <span className="font-black text-amber-400 text-lg">{cat.price}</span>
-                  <Link href="/" className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center hover:bg-amber-400 hover:text-slate-950 transition-colors text-slate-300">
+                  <Link href={`/?service=${encodeURIComponent(cat.name)}`} className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center hover:bg-amber-400 hover:text-slate-950 transition-colors text-slate-300">
                     <ArrowRight className="w-4 h-4" />
                   </Link>
                 </div>
