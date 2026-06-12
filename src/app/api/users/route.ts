@@ -54,7 +54,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { name, phone, email, location } = body;
+    const { name, phone, email, location, photoUrl } = body;
 
     if (!name || !email || !location) {
       return NextResponse.json({ error: "Missing required fields (name, email, location)." }, { status: 400 });
@@ -78,6 +78,7 @@ export async function POST(request: Request) {
       phone: phone ? phone.trim() : null,
       email: cleanedEmail,
       location: location.trim(),
+      photoUrl: photoUrl ? photoUrl.trim() : null,
     };
 
     // Google Sheets Integration: Forward payload to Google Sheets Apps Script Webhook asynchronously

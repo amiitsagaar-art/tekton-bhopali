@@ -49,6 +49,7 @@ export const users = pgTable("users", {
   phone: varchar("phone", { length: 20 }),
   email: varchar("email", { length: 255 }).notNull().unique(),
   location: varchar("location", { length: 100 }).notNull(),
+  photoUrl: varchar("photo_url", { length: 1000 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

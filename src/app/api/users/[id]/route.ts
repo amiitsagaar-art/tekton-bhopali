@@ -6,13 +6,14 @@ import { eq } from "drizzle-orm";
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const body = await request.json();
-  const { name, phone, email, location } = body;
+  const { name, phone, email, location, photoUrl } = body;
   
   const updateFields: any = {};
   if (name !== undefined) updateFields.name = name;
   if (phone !== undefined) updateFields.phone = phone;
   if (email !== undefined) updateFields.email = email;
   if (location !== undefined) updateFields.location = location;
+  if (photoUrl !== undefined) updateFields.photoUrl = photoUrl;
 
   try {
     const updated = await db

@@ -1,7 +1,8 @@
 "use client";
 import TruecallerScript from "./TruecallerScript";
-import { db } from "@/lib/firebase";
+import { db, storage } from "@/lib/firebase";
 import { collection, doc, addDoc, onSnapshot, query, orderBy, serverTimestamp, getDoc, setDoc } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useToast } from "@/context/ToastContext";
 import { useRouter } from "next/navigation";
 
@@ -281,6 +282,9 @@ export default function TektonApp() {
   const [userEmail, setUserEmail] = useState("");
   const [userAvatar, setUserAvatar] = useState("");
   const [userAddress, setUserAddress] = useState("");
+  const [userId, setUserId] = useState("");
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [loginPhoneInput, setLoginPhoneInput] = useState("");
   const [showUserPhoneLogin, setShowUserPhoneLogin] = useState(false);
   const [otpCode, setOtpCode] = useState("");
@@ -587,7 +591,8 @@ export default function TektonApp() {
             name: user.displayName || `User_${user.uid.slice(-4)}`,
             email: user.email,
             phone: user.phoneNumber || "",
-            location: defaultLocation
+            location: defaultLocation,
+            photoUrl: user.photoURL || ""
           })
         });
         if (registerRes.ok) {
@@ -601,10 +606,14 @@ export default function TektonApp() {
       localStorage.setItem("tektonUserName", user.displayName || "");
       localStorage.setItem("tektonUserPhone", dbUser?.phone || user.phoneNumber || "");
       localStorage.setItem("tektonUserLocation", dbUser?.location || selectedLocation || "All Bhopal (MP)");
+      localStorage.setItem("tektonUserAvatarUrl", dbUser?.photoUrl || user.photoURL || "");
+      localStorage.setItem("tektonUserId", dbUser?.id?.toString() || "");
 
       setUserEmail(user.email);
       setUserName(user.displayName || "");
       setUserPhone(dbUser?.phone || user.phoneNumber || "");
+      setUserAvatar(dbUser?.photoUrl || user.photoURL || "");
+      setUserId(dbUser?.id?.toString() || "");
       if (dbUser?.location) {
         setSelectedLocation(dbUser.location);
       }
@@ -630,6 +639,135 @@ export default function TektonApp() {
     } finally {
       setAuthLoading(false);
       setIsVerifying(false);
+    }
+  };
+
+  const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      showToast("⚠️ Please select a valid image file (PNG, JPG, WebP).");
+      return;
+    }
+
+    setIsUploadingAvatar(true);
+    try {
+      const uid = auth.currentUser?.uid || userId || `user_${Date.now()}`;
+      const storageRef = ref(storage, `profile_pictures/${uid}/avatar.jpg`);
+      const snapshot = await uploadBytes(storageRef, file);
+      const downloadUrl = await getDownloadURL(snapshot.ref);
+      
+      setUserAvatar(downloadUrl);
+      localStorage.setItem("tektonUserAvatarUrl", downloadUrl);
+      showToast("📷 Profile photo uploaded successfully!");
+    } catch (err: any) {
+      console.error("Firebase Storage Upload Error:", err);
+      showToast(`❌ Image upload failed: ${err.message || err}`);
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
+  const handleUpdateProfileSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const target = e.target as typeof e.target & {
+      name: { value: string };
+      phone: { value: string };
+      email: { value: string };
+      location: { value: string };
+    };
+    const newName = target.name.value.trim();
+    const newPhone = target.phone.value.trim();
+    const newEmail = target.email.value.trim();
+    const newLocation = target.location.value.trim();
+
+    if (!newName || !newPhone || !newEmail || !newLocation) {
+      showToast("❌ All fields are required.");
+      return;
+    }
+
+    setIsSavingProfile(true);
+    try {
+      // 1. Sync with Firestore 'users' collection (fail-safe)
+      try {
+        const uid = auth.currentUser?.uid;
+        if (uid) {
+          const userDocRef = doc(db, "users", uid);
+          await setDoc(userDocRef, {
+            name: newName,
+            phone: newPhone,
+            email: newEmail,
+            location: newLocation,
+            photoURL: userAvatar,
+          }, { merge: true });
+        }
+      } catch (firestoreErr) {
+        console.warn("Firestore profile sync failed/offline:", firestoreErr);
+      }
+
+      // 2. Sync with PostgreSQL backend /api/users/[id]
+      if (userId) {
+        const patchRes = await fetch(`/api/users/${userId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: newName,
+            phone: newPhone,
+            email: newEmail,
+            location: newLocation,
+            photoUrl: userAvatar,
+          }),
+        });
+
+        if (!patchRes.ok) {
+          const patchData = await patchRes.json();
+          throw new Error(patchData.error || "Failed to update PostgreSQL profile.");
+        }
+      } else {
+        console.warn("No userId found during profile save, searching by email first...");
+        const lookupRes = await fetch(`/api/users?email=${encodeURIComponent(newEmail)}`);
+        if (lookupRes.ok) {
+          const lookupData = await lookupRes.json();
+          if (lookupData.exists && lookupData.user) {
+            const resolvedId = lookupData.user.id;
+            setUserId(resolvedId.toString());
+            localStorage.setItem("tektonUserId", resolvedId.toString());
+            
+            await fetch(`/api/users/${resolvedId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                name: newName,
+                phone: newPhone,
+                email: newEmail,
+                location: newLocation,
+                photoUrl: userAvatar,
+              }),
+            });
+          }
+        }
+      }
+
+      // 3. Save to localStorage and update state
+      localStorage.setItem("tektonUserName", newName);
+      localStorage.setItem("tektonUserPhone", newPhone);
+      localStorage.setItem("tektonUserEmail", newEmail);
+      localStorage.setItem("tektonUserLocation", newLocation);
+      localStorage.setItem("tektonUserAvatarUrl", userAvatar);
+
+      setUserName(newName);
+      setUserPhone(newPhone);
+      setUserEmail(newEmail);
+      setSelectedLocation(newLocation);
+
+      setIsEditProfileOpen(false);
+      showToast("✓ Profile updated and synchronized successfully!");
+    } catch (err: any) {
+      console.error("Profile Save Error:", err);
+      showToast(`❌ Failed to save profile: ${err.message || err}`);
+    } finally {
+      setIsSavingProfile(false);
     }
   };
 
@@ -906,6 +1044,21 @@ export default function TektonApp() {
     const savedLoc = localStorage.getItem("tektonUserLocation");
     if (savedLoc) {
       setNewFeedbackLocation(savedLoc);
+    }
+    const savedId = localStorage.getItem("tektonUserId");
+    if (savedId) {
+      setUserId(savedId);
+    } else if (savedEmail) {
+      // Resolve missing ID from backend using email
+      fetch(`/api/users?email=${encodeURIComponent(savedEmail)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.exists && data.user) {
+            localStorage.setItem("tektonUserId", data.user.id.toString());
+            setUserId(data.user.id.toString());
+          }
+        })
+        .catch(err => console.error("Could not resolve user ID on mount:", err));
     }
   }, []);
 
@@ -2635,89 +2788,147 @@ export default function TektonApp() {
         </div>
       )}
 \n      {/* EDIT PROFILE MODAL */}
-      {isEditProfileOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-955/80 backdrop-blur-md animate-fade-in">
-          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-md w-full overflow-hidden shadow-2xl p-6 relative">
-            <button
-              onClick={() => setIsEditProfileOpen(false)}
-              className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition"
-              title="Close modal"
-            >
-              <X className="w-4 h-4" />
-            </button>
+      {isEditProfileOpen && (() => {
+        const isGoogleUser = auth.currentUser?.providerData.some(p => p.providerId === "google.com");
+        return (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-955/85 backdrop-blur-md animate-fade-in">
+            <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-md w-full overflow-hidden shadow-2xl p-6 relative">
+              <button
+                onClick={() => setIsEditProfileOpen(false)}
+                className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition"
+                title="Close modal"
+                disabled={isSavingProfile}
+              >
+                <X className="w-4 h-4" />
+              </button>
 
-            <h3 className="text-lg font-black text-white mb-4 uppercase tracking-wider">
-              👤 Edit Profile Details
-            </h3>
+              <h3 className="text-lg font-black text-white mb-6 uppercase tracking-wider text-center">
+                👤 Edit Profile Details
+              </h3>
 
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                const target = e.target as typeof e.target & {
-                  name: { value: string };
-                  phone: { value: string };
-                };
-                const newName = target.name.value.trim();
-                const newPhone = target.phone.value.trim();
-
-                if (!newName || !newPhone) {
-                  alert("Name and phone number cannot be empty.");
-                  return;
-                }
-
-                localStorage.setItem("tektonUserName", newName);
-                localStorage.setItem("tektonUserPhone", newPhone);
-                setUserName(newName);
-                setUserPhone(newPhone);
-                setIsEditProfileOpen(false);
-                showToast("✓ Profile updated successfully!");
-              }}
-              className="space-y-4 text-slate-200"
-            >
-              <div className="space-y-1">
-                <label className="block text-[10px] text-slate-400 font-bold uppercase">Full Name</label>
+              {/* Profile Photo Uploader */}
+              <div className="flex flex-col items-center mb-6">
+                <div className="relative group w-24 h-24 rounded-full overflow-hidden border-2 border-yellow-400/80 shadow-lg bg-slate-800 flex items-center justify-center">
+                  {isUploadingAvatar ? (
+                    <div className="absolute inset-0 bg-slate-900/60 flex items-center justify-center">
+                      <div className="w-6 h-6 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin"></div>
+                    </div>
+                  ) : (
+                    <img
+                      className="w-full h-full object-cover"
+                      src={userAvatar || "https://images.unsplash.com/photo-1633332755192-727a05c4013d?w=120&auto=format&fit=crop"}
+                      alt="Avatar"
+                    />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => document.getElementById("profile-photo-file-input")?.click()}
+                    className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[10px] font-bold transition duration-200 cursor-pointer"
+                    disabled={isUploadingAvatar || isSavingProfile}
+                  >
+                    Change Photo
+                  </button>
+                </div>
                 <input
-                  type="text"
-                  name="name"
-                  defaultValue={userName}
-                  required
-                  placeholder="e.g. Ramesh Kumar"
-                  className="w-full border border-white/10 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-yellow-400 transition text-slate-900 bg-white placeholder-slate-400"
+                  type="file"
+                  id="profile-photo-file-input"
+                  accept="image/*"
+                  onChange={handleAvatarFileChange}
+                  className="hidden"
+                  disabled={isUploadingAvatar || isSavingProfile}
                 />
+                {isUploadingAvatar && <p className="text-[10px] text-yellow-400 font-bold mt-1.5 animate-pulse">Uploading to Storage...</p>}
               </div>
 
-              <div className="space-y-1">
-                <label className="block text-[10px] text-slate-400 font-bold uppercase">Phone Number</label>
-                <input
-                  type="tel"
-                  name="phone"
-                  defaultValue={userPhone}
-                  required
-                  pattern="[0-9]{10}"
-                  placeholder="e.g. 9876543210"
-                  className="w-full border border-white/10 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-yellow-400 transition font-mono text-slate-900 bg-white placeholder-slate-400"
-                />
-              </div>
+              <form onSubmit={handleUpdateProfileSubmit} className="space-y-4 text-slate-200">
+                <div className="space-y-1">
+                  <label className="block text-[10px] text-slate-400 font-bold uppercase">Full Name</label>
+                  <input
+                    type="text"
+                    name="name"
+                    defaultValue={userName}
+                    required
+                    disabled={isSavingProfile}
+                    placeholder="e.g. Ramesh Kumar"
+                    className="w-full border border-white/10 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-yellow-400 transition text-slate-900 bg-white placeholder-slate-400"
+                  />
+                </div>
 
-              <div className="pt-2 flex space-x-3">
-                <button
-                  type="button"
-                  onClick={() => setIsEditProfileOpen(false)}
-                  className="w-1/3 bg-slate-800 hover:bg-slate-750 text-slate-350 font-bold text-xs uppercase tracking-wider py-3 rounded-xl transition border border-white/5"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-black text-xs uppercase tracking-wider py-3 rounded-xl transition shadow-[0_0_15px_rgba(250,204,21,0.2)]"
-                >
-                  Save Changes
-                </button>
-              </div>
-            </form>
+                <div className="space-y-1">
+                  <label className="block text-[10px] text-slate-400 font-bold uppercase">
+                    Email Address {isGoogleUser && <span className="text-yellow-500 font-normal lowercase">(read-only for Google account)</span>}
+                  </label>
+                  <input
+                    type="email"
+                    name="email"
+                    defaultValue={userEmail}
+                    required
+                    readOnly={isGoogleUser}
+                    disabled={isSavingProfile}
+                    placeholder="e.g. ramesh@gmail.com"
+                    className={`w-full border border-white/10 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-yellow-400 transition text-slate-900 bg-white placeholder-slate-400 ${isGoogleUser ? 'bg-slate-100 cursor-not-allowed text-slate-550' : ''}`}
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[10px] text-slate-400 font-bold uppercase">Phone Number</label>
+                  <input
+                    type="tel"
+                    name="phone"
+                    defaultValue={userPhone}
+                    required
+                    pattern="[0-9]{10}"
+                    disabled={isSavingProfile}
+                    placeholder="e.g. 9876543210"
+                    className="w-full border border-white/10 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-yellow-400 transition font-mono text-slate-900 bg-white placeholder-slate-400"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[10px] text-slate-400 font-bold uppercase">Location / Colony</label>
+                  <select
+                    name="location"
+                    defaultValue={selectedLocation}
+                    disabled={isSavingProfile}
+                    className="w-full border border-white/10 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-yellow-400 transition text-slate-900 bg-white appearance-none cursor-pointer"
+                  >
+                    {BHOPAL_LOCATIONS.map((loc) => (
+                      <option key={loc} value={loc}>
+                        {loc}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="pt-2 flex space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditProfileOpen(false)}
+                    disabled={isSavingProfile}
+                    className="w-1/3 bg-slate-800 hover:bg-slate-750 text-slate-355 font-bold text-xs uppercase tracking-wider py-3 rounded-xl transition border border-white/5 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingProfile || isUploadingAvatar}
+                    className="flex-1 bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-black text-xs uppercase tracking-wider py-3 rounded-xl transition shadow-[0_0_15px_rgba(250,204,21,0.2)] flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  >
+                    {isSavingProfile ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-slate-955 border-t-transparent rounded-full animate-spin"></div>
+                        <span>Saving...</span>
+                      </>
+                    ) : (
+                      <span>Save Changes</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* LOGIN / REGISTER MODAL */}
       {showLoginModal && (

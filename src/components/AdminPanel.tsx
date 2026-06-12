@@ -66,6 +66,7 @@ interface User {
   phone: string;
   email: string;
   location: string;
+  photoUrl?: string;
   createdAt: string;
 }
 
@@ -1210,8 +1211,13 @@ export default function AdminPanel() {
                       <tr key={u.id} className="hover:bg-slate-50/80 transition">
                         
                         {/* ID & Name */}
-                        <td className="py-3 px-4 font-bold text-slate-900">
-                          #{u.id} • {u.name}
+                        <td className="py-3 px-4 font-bold text-slate-900 flex items-center gap-2">
+                          <img
+                            className="w-6 h-6 rounded-full object-cover border border-slate-200"
+                            src={u.photoUrl || "https://images.unsplash.com/photo-1633332755192-727a05c4013d?w=100&auto=format&fit=crop"}
+                            alt={u.name}
+                          />
+                          <span>#{u.id} • {u.name}</span>
                         </td>
 
                         {/* Phone */}
