@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import useSWR from "swr";
 import {
   ArrowLeft, Calendar, Clock, MapPin, CheckCircle2,
   XCircle, AlertCircle, Loader2, Package, Phone,
@@ -36,12 +37,15 @@ const STATUS_STYLES: Record<string, { bg: string; text: string; icon: React.Reac
   Cancelled: { bg: "bg-rose-500/15 border-rose-500/30",   text: "text-rose-400",   icon: <XCircle className="w-4 h-4" /> },
 };
 
+// SWR fetcher function
+const fetcher = (url: string) => fetch(url).then((r) => {
+  if (!r.ok) throw new Error("Failed to fetch");
+  return r.json();
+});
+
 export default function MyBookingsPage() {
   const [mounted, setMounted] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [bookings, setBookings] = useState<Booking[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [userPhone, setUserPhone] = useState("");
+  const [userPhone, setUserPhone] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<number | null>(null);
   const [cancelReason, setCancelReason] = useState("");
   const [showCancelModal, setShowCancelModal] = useState<number | null>(null);
@@ -55,29 +59,22 @@ export default function MyBookingsPage() {
   useEffect(() => {
     setMounted(true);
     const phone = localStorage.getItem("tektonUserPhone");
-    if (phone) {
-      setIsLoggedIn(true);
-      setUserPhone(phone);
-      fetchMyBookings(phone);
-    } else {
-      setIsLoading(false);
-    }
+    setUserPhone(phone);
   }, []);
 
-  const fetchMyBookings = async (phone: string) => {
-    setIsLoading(true);
-    try {
-      const res = await fetch(`/api/bookings?phone=${encodeURIComponent(phone)}`);
-      if (res.ok) {
-        const data = await res.json();
-        setBookings(Array.isArray(data) ? data : []);
-      }
-    } catch (err) {
-      console.error("Failed to fetch bookings:", err);
-    } finally {
-      setIsLoading(false);
+  // SWR hook: only fetch when we have a phone number
+  const swrKey = userPhone ? `/api/bookings?phone=${encodeURIComponent(userPhone)}` : null;
+  const { data: bookings = [], error, isLoading, mutate } = useSWR<Booking[]>(
+    swrKey,
+    fetcher,
+    {
+      revalidateOnFocus: true,         // revalidate when user returns to tab
+      revalidateOnReconnect: true,     // revalidate on network reconnect
+      refreshInterval: 30000,          // auto-refresh every 30 seconds
+      dedupingInterval: 5000,          // dedupe requests within 5 seconds
+      keepPreviousData: true,          // show old data while refreshing (no flash)
     }
-  };
+  );
 
   const handleCancelBooking = async (bookingId: number) => {
     if (!cancelReason.trim()) {
@@ -96,8 +93,10 @@ export default function MyBookingsPage() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        setBookings(prev =>
-          prev.map(b => b.id === bookingId ? { ...b, status: "Cancelled" } : b)
+        // Optimistic update via SWR mutate — no full refetch needed
+        mutate(
+          (prev) => prev?.map(b => b.id === bookingId ? { ...b, status: "Cancelled" } : b),
+          { revalidate: false }
         );
         showToast("✅ Booking cancelled successfully.", "success");
         setShowCancelModal(null);
@@ -114,6 +113,7 @@ export default function MyBookingsPage() {
 
   if (!mounted) return null;
 
+  const isLoggedIn = !!userPhone;
   const pendingBookings = bookings.filter(b => ["Pending", "Confirmed", "Assigned"].includes(b.status));
   const completedBookings = bookings.filter(b => b.status === "Completed");
   const cancelledBookings = bookings.filter(b => b.status === "Cancelled");
@@ -172,8 +172,21 @@ export default function MyBookingsPage() {
               Login / Create Profile
             </Link>
           </div>
-        ) : isLoading ? (
-          /* LOADING */
+        ) : error ? (
+          /* ERROR STATE */
+          <div className="flex flex-col items-center justify-center py-24 text-center space-y-4">
+            <XCircle className="w-12 h-12 text-rose-400" />
+            <h2 className="text-xl font-black text-white">Failed to Load Bookings</h2>
+            <p className="text-slate-400 text-sm">Network error. Please check your connection.</p>
+            <button
+              onClick={() => mutate()}
+              className="mt-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-6 py-3 rounded-xl text-sm transition flex items-center gap-2"
+            >
+              <RefreshCw className="w-4 h-4" /> Retry
+            </button>
+          </div>
+        ) : isLoading && !bookings.length ? (
+          /* INITIAL LOADING — only shown when no cached data exists */
           <div className="flex flex-col items-center justify-center py-24 gap-4">
             <Loader2 className="w-10 h-10 text-amber-400 animate-spin" />
             <p className="text-slate-400 text-sm font-semibold">Loading your bookings...</p>
@@ -211,12 +224,13 @@ export default function MyBookingsPage() {
 
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-black text-white">All Bookings ({bookings.length})</h2>
+              {/* SWR auto-refreshes, but manual refresh is kept for UX */}
               <button
-                onClick={() => fetchMyBookings(userPhone)}
+                onClick={() => mutate()}
                 className="flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-amber-400 transition"
               >
-                <RefreshCw className="w-3.5 h-3.5" />
-                Refresh
+                <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin text-amber-400" : ""}`} />
+                {isLoading ? "Refreshing..." : "Refresh"}
               </button>
             </div>
 

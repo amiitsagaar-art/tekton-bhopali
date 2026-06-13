@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import useSWR from "swr";
 import { ArrowLeft, CheckCircle2, Zap, Power, IndianRupee, Clock, Check, X, LogOut, User, Camera, UploadCloud, AlertTriangle, ShieldCheck, Loader2 } from "lucide-react";
 import { storage } from "@/lib/firebase";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -149,97 +150,85 @@ export default function PartnerDashboardPage() {
     }
   };
 
-  const [earnings, setEarnings] = useState({ today: 0, week: 0, month: 0 });
+  // Partner profile state (populated from SWR data via useEffect below)
   const [partnerProfile, setPartnerProfile] = useState<any>(null);
-  const [assignedJobs, setAssignedJobs] = useState<any[]>([]);
-  const [activeJobs, setActiveJobs] = useState<any[]>([]);
 
-  // Load partner profile and jobs on mount
+  const [phone, setPhone] = useState<string | null>(null);
+
+  // Read phone from localStorage once on mount
   useEffect(() => {
-    const fetchData = async () => {
-      const phone = localStorage.getItem("tektonWorkerPhone");
-      if (!phone) {
-        router.push("/");
-        return;
-      }
-
-      try {
-        const workersRes = await fetch(`/api/workers?phone=${phone}`);
-        const workers = await workersRes.json();
-        if (!workersRes.ok || !Array.isArray(workers)) {
-          throw new Error("Failed to fetch worker profile.");
-        }
-        const partner = workers[0];
-
-        // Strict validation: ensure partner exists
-        if (!partner) {
-          alert("This number is not registered as a Partner.");
-          localStorage.removeItem("tektonWorkerPhone");
-          router.push("/");
-          return;
-        }
-
-        // Status validation
-        const partnerStatus = partner.status?.toLowerCase();
-        if (partnerStatus === "pending" || partnerStatus === "rejected") {
-          alert(
-            "Your partner application is currently " + partner.status + ". Please wait for admin approval."
-          );
-          localStorage.removeItem("tektonWorkerPhone");
-          router.push("/");
-          return;
-        }
-
-        // Success case – approved/active partner
-        setPartnerProfile(partner);
-        setProfileName(partner.name || "");
-        setProfileAddress(partner.locations || "");
-        setProfileCategory(partner.category || "");
-        setProfileAvatarUrl(partner.avatarUrl || "");
-        setProfileAadhaarUrl(partner.aadhaarUrl || "");
-        
-        const appointmentsRes = await fetch(`/api/appointments?workerId=${partner.id}`);
-        const appointments = await appointmentsRes.json();
-        if (!appointmentsRes.ok || !Array.isArray(appointments)) {
-          throw new Error("Failed to fetch assigned appointments.");
-        }
-
-        const myJobs = appointments;
-        const assigned = myJobs.filter((b: any) => {
-          const status = b.status?.toLowerCase();
-          return status === "assigned" || status === "pending";
-        });
-        const active = myJobs.filter((b: any) => {
-          const status = b.status?.toLowerCase();
-          return ["accepted", "confirmed", "completed"].includes(status);
-        });
-        setAssignedJobs(assigned);
-        setActiveJobs(active);
-
-        // Calculate real earnings from completed jobs
-        const now = new Date();
-        const todayStr = now.toISOString().slice(0, 10);
-        const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-        const completedJobs = myJobs.filter((b: any) => b.status?.toLowerCase() === "completed");
-        const todayEarnings = completedJobs
-          .filter((b: any) => b.appointmentDate === todayStr)
-          .reduce((sum: number, b: any) => sum + (b.totalAmount || b.visitCharge || 0), 0);
-        const weekEarnings = completedJobs
-          .filter((b: any) => new Date(b.createdAt) >= oneWeekAgo)
-          .reduce((sum: number, b: any) => sum + (b.totalAmount || b.visitCharge || 0), 0);
-        const monthEarnings = completedJobs
-          .filter((b: any) => new Date(b.createdAt) >= oneMonthAgo)
-          .reduce((sum: number, b: any) => sum + (b.totalAmount || b.visitCharge || 0), 0);
-        setEarnings({ today: todayEarnings, week: weekEarnings, month: monthEarnings });
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchData();
+    const stored = localStorage.getItem("tektonWorkerPhone");
+    if (!stored) {
+      router.push("/");
+    } else {
+      setPhone(stored);
+    }
   }, [router]);
+
+  // SWR fetcher
+  const fetcher = (url: string) => fetch(url).then(r => {
+    if (!r.ok) throw new Error("Failed to fetch");
+    return r.json();
+  });
+
+  // SWR: fetch worker profile by phone
+  const { data: workers, error: workerError } = useSWR<any[]>(
+    phone ? `/api/workers?phone=${phone}` : null,
+    fetcher,
+    { revalidateOnFocus: true, dedupingInterval: 10000 }
+  );
+
+  // Derive partner profile from workers array
+  const partner = workers?.[0] ?? null;
+
+  // SWR: fetch appointments for this worker (depends on partner.id)
+  const { data: jobsData = [], mutate: mutateJobs, isLoading: jobsLoading } = useSWR<any[]>(
+    partner?.id ? `/api/appointments?workerId=${partner.id}` : null,
+    fetcher,
+    { revalidateOnFocus: true, refreshInterval: 20000, keepPreviousData: true }
+  );
+
+  // Sync partner profile to local state for the edit form
+  useEffect(() => {
+    if (!partner) return;
+    // Validate partner status
+    const status = partner.status?.toLowerCase();
+    if (status === "pending" || status === "rejected") {
+      alert("Your partner application is currently " + partner.status + ". Please wait for admin approval.");
+      localStorage.removeItem("tektonWorkerPhone");
+      router.push("/");
+      return;
+    }
+    setPartnerProfile(partner);
+    setProfileName(partner.name || "");
+    setProfileAddress(partner.locations || "");
+    setProfileCategory(partner.category || "");
+    setProfileAvatarUrl(partner.avatarUrl || "");
+    setProfileAadhaarUrl(partner.aadhaarUrl || "");
+    setIsLoading(false);
+  }, [partner, router]);
+
+  // Derive job lists from SWR data
+  const assignedJobs = jobsData.filter((b: any) => {
+    const status = b.status?.toLowerCase();
+    return status === "assigned" || status === "pending";
+  });
+  const activeJobs = jobsData.filter((b: any) => {
+    const status = b.status?.toLowerCase();
+    return ["accepted", "confirmed", "completed"].includes(status);
+  });
+
+  // Compute real earnings from completed jobs
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+  const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const completedJobs = jobsData.filter((b: any) => b.status?.toLowerCase() === "completed");
+  const earnings = {
+    today: completedJobs.filter((b: any) => b.appointmentDate === todayStr).reduce((s: number, b: any) => s + (b.totalAmount || b.visitCharge || 0), 0),
+    week:  completedJobs.filter((b: any) => new Date(b.createdAt) >= oneWeekAgo).reduce((s: number, b: any) => s + (b.totalAmount || b.visitCharge || 0), 0),
+    month: completedJobs.filter((b: any) => new Date(b.createdAt) >= oneMonthAgo).reduce((s: number, b: any) => s + (b.totalAmount || b.visitCharge || 0), 0),
+  };
 
   const handleAcceptJob = async (id: number) => {
     const job = assignedJobs.find((j) => j.id === id);
@@ -259,9 +248,11 @@ export default function PartnerDashboardPage() {
         const err = await res.json();
         throw new Error(err.error || "Failed to accept job");
       }
-      // Move job to active list with updated status
-      setAssignedJobs((prev) => prev.filter((j) => j.id !== id));
-      setActiveJobs((prev) => [...prev, { ...job, status: "Confirmed" }]);
+      // Optimistically update via SWR mutate
+      mutateJobs(
+        (prev: any[] = []) => prev.map(j => j.id === id ? { ...j, status: "Confirmed" } : j),
+        { revalidate: true }
+      );
     } catch (e: any) {
       console.error(e);
       alert("Could not accept job: " + (e.message || "Unknown error"));
@@ -284,7 +275,7 @@ export default function PartnerDashboardPage() {
         const err = await res.json();
         throw new Error(err.error || "Failed to decline job");
       }
-      setAssignedJobs((prev) => prev.filter((j) => j.id !== id));
+      mutateJobs(); // revalidate from server
     } catch (e: any) {
       console.error(e);
       alert("Could not decline job: " + (e.message || "Unknown error"));
@@ -308,8 +299,11 @@ export default function PartnerDashboardPage() {
         const err = await res.json();
         throw new Error(err.error || "Failed to complete job");
       }
-      // Mark job as completed in UI
-      setActiveJobs((prev) => prev.map(j => j.id === id ? { ...j, status: "Completed" } : j));
+      // Optimistically mark job as completed via SWR mutate
+      mutateJobs(
+        (prev: any[] = []) => prev.map(j => j.id === id ? { ...j, status: "Completed" } : j),
+        { revalidate: true }
+      );
       showToast("✅ Job marked as Completed! Earnings updated.", "success");
     } catch (e: any) {
       console.error(e);

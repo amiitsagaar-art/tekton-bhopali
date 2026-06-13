@@ -54,9 +54,7 @@ export async function POST(request: Request) {
       transactionId,
     } = body;
 
-    const sheetdbUrl = process.env.SHEETDB_API_URL || "https://sheetdb.io/api/v1/e1d9cpd85s3zu";
-
-    // 1. Save strictly to Drizzle database
+    // 1. Save strictly to Drizzle/Neon PostgreSQL — Single Source of Truth
     let dbBookingId = "";
     try {
       const charge = totalPrice ? Number(totalPrice) : 0;
@@ -88,50 +86,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Failed to save appointment to database: " + dbError.message }, { status: 500 });
     }
 
-    // 2. Format strictly wrapped in a "data" object array for SheetDB API
-    const payload = {
-      data: [
-        {
-          bookingId: dbBookingId,
-          customerName: customerName || "",
-          phoneNumber: phoneNumber || "",
-          locationZone: locationZone || "",
-          exactAddress: exactAddress || "",
-          serviceCategory: serviceCategory || "",
-          description: description || "No details provided",
-          visitDate: visitDate || "",
-          timeSlot: timeSlot || "",
-          totalPrice: totalPrice || 0,
-          status: "Confirmed",
-          transactionId: transactionId || "",
-          paymentStatus: transactionId ? "Paid" : "Pending",
-        },
-      ],
-    };
-
-    // 3. Post to SheetDB as a remote backup
-    try {
-      const response = await fetch(sheetdbUrl, {
-        method: "POST",
-        headers: {
-          "Accept": "application/json",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`SheetDB API returned error: ${errorText}`);
-      }
-    } catch (sheetdbError: any) {
-      console.warn("[DATABASE FAILOVER] SheetDB write failed. local database save succeeded.", sheetdbError);
-    }
-
-    // 4. Send WhatsApp confirmation to customer
+    // 2. Send WhatsApp confirmation to customer
     await sendWhatsAppMessage(phoneNumber, `Hi ${customerName}, your booking for ${serviceCategory} on ${visitDate} at ${timeSlot} has been received successfully! Tracking ID: ${dbBookingId}. Team Tekton.`);
 
-    // 5. Send WhatsApp notification to Admin if payment is made
+    // 3. Send WhatsApp notification to Admin if payment is made
     if (transactionId) {
       const adminPhone = process.env.ADMIN_PHONE_NUMBER || SITE_CONFIG.phone || "+919876543210";
       await sendWhatsAppMessage(
