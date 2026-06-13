@@ -1,68 +1,82 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { appointments } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
+import { sendWhatsAppMessage } from "@/utils/whatsapp";
 
-export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const params = await context.params;
-    const appointmentId = parseInt(params.id);
-    if (isNaN(appointmentId)) return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
-
+    const { id } = await params;
     const body = await request.json();
-    const { cancellationReason } = body;
+    const { phone, reason } = body;
 
-    // Fetch the appointment
-    const appointmentRecord = await db
+    if (!phone) {
+      return NextResponse.json({ error: "Phone number required" }, { status: 400 });
+    }
+
+    const numericId = Number(id);
+    if (isNaN(numericId)) {
+      return NextResponse.json({ error: "Invalid booking ID" }, { status: 400 });
+    }
+
+    // Find booking and verify it belongs to this phone number
+    const existing = await db
       .select()
       .from(appointments)
-      .where(eq(appointments.id, appointmentId))
+      .where(and(eq(appointments.id, numericId), eq(appointments.customerPhone, phone.trim())))
       .limit(1);
 
-    if (!appointmentRecord || appointmentRecord.length === 0) {
-      return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+    if (!existing[0]) {
+      return NextResponse.json(
+        { error: "Booking not found or does not belong to your account." },
+        { status: 404 }
+      );
     }
 
-    const appt = appointmentRecord[0];
-    
-    if (appt.status === "Cancelled") {
-      return NextResponse.json({ error: "Booking is already cancelled" }, { status: 400 });
+    const booking = existing[0];
+
+    // Only allow cancellation of Pending or Confirmed bookings
+    if (!["Pending", "Confirmed"].includes(booking.status)) {
+      return NextResponse.json(
+        { error: `Booking cannot be cancelled — current status is "${booking.status}".` },
+        { status: 400 }
+      );
     }
 
-    // Calculate time difference for 5-minute rule
-    const bookingTime = new Date(appt.createdAt).getTime();
-    const currentTime = new Date().getTime();
-    const diffMinutes = (currentTime - bookingTime) / (1000 * 60);
-
-    let refundStatus = "No Refund (Penalty applied)";
-    let newPaymentStatus = appt.paymentStatus; // typically "Paid" or "Pending"
-
-    if (diffMinutes <= 5) {
-      refundStatus = "Refund Initiated";
-      newPaymentStatus = "Refunded";
-      // In a real app, you would call Razorpay/Stripe Refund API here
-    }
-
-    // Update appointment status to cancelled and log the reason and refund status
+    // Update status to Cancelled
     const updated = await db
       .update(appointments)
       .set({
         status: "Cancelled",
-        paymentStatus: newPaymentStatus,
-        cancellationReason: `[${refundStatus}] ${cancellationReason || "No reason provided"}`,
+        cancellationReason: reason || "Cancelled by customer",
       })
-      .where(eq(appointments.id, appointmentId))
+      .where(eq(appointments.id, numericId))
       .returning();
 
-    return NextResponse.json({ 
-      success: true, 
-      refundStatus,
-      message: `Booking Cancelled. ${refundStatus}.`,
-      appointment: updated[0] 
-    });
+    // WhatsApp notification to customer
+    try {
+      await sendWhatsAppMessage(
+        phone,
+        `Your Tekton booking TEK-${numericId} (${booking.category}) has been cancelled. Reason: ${reason || "Cancelled by customer"}. We hope to serve you again! Team Tekton.`
+      );
+    } catch (e) {
+      // Non-critical, continue
+      console.warn("WhatsApp notification failed:", e);
+    }
 
+    return NextResponse.json({
+      success: true,
+      bookingId: `TEK-${numericId}`,
+      message: "Booking cancelled successfully.",
+    });
   } catch (error: any) {
-    console.error("[CANCEL API ERROR]", error);
-    return NextResponse.json({ error: "Failed to cancel booking" }, { status: 500 });
+    console.error("[CANCEL BOOKING ERROR]", error);
+    return NextResponse.json(
+      { error: "Failed to cancel booking: " + error.message },
+      { status: 500 }
+    );
   }
 }

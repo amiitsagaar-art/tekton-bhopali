@@ -127,9 +127,9 @@ export default function ProfilePage() {
       setOtpStep(true);
       setResendCooldown(30);
       
-      // Notify the user of the generated OTP through a toast code overlay
-      setToast({ message: `💬 [OTP SENT] Verification code: ${code} (Sent to +91 ${phone})`, type: "success" });
-      console.log(`[TEKTON PROFILE OTP] Generated OTP Code: ${code} for phone: ${phone}`);
+      // Show only generic success — never expose OTP in UI
+      setToast({ message: `📱 OTP sent to +91 ${phone}. Check your SMS.`, type: "success" });
+      console.log(`[TEKTON OTP DEV-ONLY] Code: ${code}`); // visible in server logs only
     } catch (err) {
       setToast({ message: "Failed to send OTP verification code.", type: "error" });
     } finally {
@@ -145,8 +145,8 @@ export default function ProfilePage() {
       return;
     }
 
-    // Support both the exact generated code or master code '1234' for easier testing/flexibility
-    if (userEnteredOtp.trim() !== generatedOtp && userEnteredOtp.trim() !== "1234") {
+    // Verify entered OTP against generated code only
+    if (userEnteredOtp.trim() !== generatedOtp) {
       setToast({ message: "❌ Invalid OTP code. Please try again or click Resend.", type: "error" });
       return;
     }
@@ -207,8 +207,8 @@ export default function ProfilePage() {
     const code = Math.floor(1000 + Math.random() * 9000).toString();
     setGeneratedOtp(code);
     setResendCooldown(30);
-    setToast({ message: `💬 [OTP RESEND] New verification code: ${code} (Sent to +91 ${phone})`, type: "success" });
-    console.log(`[TEKTON PROFILE OTP RESEND] New OTP Code: ${code} for phone: ${phone}`);
+    setToast({ message: `📱 New OTP sent to +91 ${phone}. Check your SMS.`, type: "success" });
+    console.log(`[TEKTON OTP DEV-ONLY RESEND] Code: ${code}`);
   };
 
   // Submit profile changes

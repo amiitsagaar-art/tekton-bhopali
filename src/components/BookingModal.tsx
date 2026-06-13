@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { X, ArrowRight, ArrowLeft, Calendar, Clock, User, Phone, MapPin, CheckCircle2, Ticket, CreditCard, Sparkles } from "lucide-react";
+import { X, ArrowRight, ArrowLeft, Calendar, Clock, User, Phone, MapPin, CheckCircle2, Ticket, CreditCard, Sparkles, HelpingHand, Camera } from "lucide-react";
 import { SITE_CONFIG } from "@/config/site";
+import { useLanguage } from "../context/LanguageContext";
 
 interface Worker {
   id: number;
@@ -24,24 +25,15 @@ interface BookingModalProps {
 
 const BHOPAL_LOCATIONS = [
   "MP Nagar",
-  "Minal Residency",
-  "People's Mall Area",
-  "Ashoka Garden",
-  "Indrapuri",
-  "Anand Nagar",
-  "Patel Nagar",
-  "Arera Colony",
   "Kolar Road",
-  "Govindpura",
-  "Awadhpuri",
-  "Bairagarh",
-  "Gulmohar",
-  "Saket Nagar",
-  "Ayodhya Bypass",
-  "Jahangirabad",
-  "Lalghati",
-  "BHEL",
+  "Arera Colony",
   "Habibganj",
+  "Indrapuri",
+  "Saket Nagar",
+  "Chunabhatti",
+  "Gulmohar",
+  "Ayodhya Bypass",
+  "BHEL Township",
   "TT Nagar",
   "New Market Area"
 ];
@@ -54,6 +46,15 @@ const TIME_SLOTS = [
   "04:00 PM - 06:00 PM",
   "06:00 PM - 08:00 PM",
   "Urgent (Within 45 Mins)"
+];
+
+const HELPER_PACKAGES = [
+  { hours: 1, label: "1 Hour", price: 200 },
+  { hours: 2, label: "2 Hours", price: 350 },
+  { hours: 3, label: "3 Hours", price: 500 },
+  { hours: 4, label: "4 Hours", price: 650 },
+  { hours: 6, label: "6 Hours (Meal required)", price: 800 },
+  { hours: 12, label: "12 Hours (Full Day + Meal required)", price: 1000 },
 ];
 
 export default function BookingModal({
@@ -77,6 +78,10 @@ export default function BookingModal({
   const [visitDate, setVisitDate] = useState("");
   const [timeSlot, setTimeSlot] = useState(TIME_SLOTS[6]); // default to urgent
 
+  // General Helper Specific States
+  const [helperDuration, setHelperDuration] = useState<number>(2); // Default to 2 hours
+  const [agreedToHelperTerms, setAgreedToHelperTerms] = useState<boolean>(false);
+
   // Pricing from API
   const [apiBasePrice, setApiBasePrice] = useState<number | null>(null);
 
@@ -93,12 +98,20 @@ export default function BookingModal({
   const [upiTransactionId, setUpiTransactionId] = useState("");
   const [cashEnabled, setCashEnabled] = useState(SITE_CONFIG.enableCashPayment);
 
+  // Jugaad Scanner State
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanResult, setScanResult] = useState("");
+  
+  const { t } = useLanguage();
+
   // Load profile + API price on open
   useEffect(() => {
     if (isOpen) {
       // Set default date to today (min date)
       const today = new Date().toISOString().split("T")[0];
       setVisitDate(today);
+      setHelperDuration(2);
+      setAgreedToHelperTerms(false);
 
       // Pre-fill user data if available
       const savedPhone = localStorage.getItem("tektonUserPhone") || "";
@@ -148,9 +161,12 @@ export default function BookingModal({
   if (!isOpen) return null;
 
   // Price resolution: worker price > API price > prop price > 99
-  const actualBasePrice = worker
-    ? worker.basePrice
-    : (apiBasePrice ?? Number(basePrice)) || 99;
+  const selectedPackage = HELPER_PACKAGES.find(p => p.hours === helperDuration);
+  const actualBasePrice = serviceName === "General Helper"
+    ? (selectedPackage ? selectedPackage.price : 200)
+    : (worker
+      ? worker.basePrice
+      : (apiBasePrice ?? Number(basePrice)) || 99);
 
   // Final price with coupon applied
   const couponDeducted = couponApplied
@@ -203,11 +219,32 @@ export default function BookingModal({
     setCouponError("");
   };
 
+  // Mock Jugaad Scanner function
+  const handleJugaadScan = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setIsScanning(true);
+      setScanResult("");
+      
+      // Simulate AI delay
+      setTimeout(() => {
+        setIsScanning(false);
+        // Set a mock result based on the current service category to seem intelligent
+        const mockResult = `Looks like an issue requiring a ${serviceName}. Estimated fix cost: ₹${actualBasePrice + 100}. We have auto-filled this context.`;
+        setScanResult(mockResult);
+        setDescription((prev) => prev ? prev + "\n[AI Scan: " + mockResult + "]" : "[AI Scan: " + mockResult + "]");
+      }, 2500);
+    }
+  };
+
   // Step 1 Validation
   const handleStep1Next = (e: React.FormEvent) => {
     e.preventDefault();
     if (description.trim().length < 5) {
       alert("Please describe your requirement in a bit more detail (minimum 5 characters).");
+      return;
+    }
+    if (serviceName === "General Helper" && !agreedToHelperTerms) {
+      alert("Please accept the Terms & Conditions for General Helper service to proceed.");
       return;
     }
     setStep(2);
@@ -239,9 +276,12 @@ export default function BookingModal({
 
   const submitBooking = async (transactionId: string | null = null) => {
     try {
+      const selectedPkg = HELPER_PACKAGES.find(p => p.hours === helperDuration);
       const finalPayload = {
         serviceCategory: serviceName,
-        description,
+        description: serviceName === "General Helper" && selectedPkg
+          ? `[Duration: ${selectedPkg.label}] ${description}`
+          : description,
         customerName,
         phoneNumber: customerPhone,        // ✅ API expects phoneNumber
         exactAddress: customerAddress,     // ✅ API expects exactAddress
@@ -467,6 +507,99 @@ export default function BookingModal({
                   Be descriptive so the artisan comes prepared with the correct tools.
                 </span>
               </div>
+
+              {/* Jugaad Scanner AI Block */}
+              <div className="bg-slate-900/50 border border-indigo-500/20 rounded-xl p-4 space-y-3 relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 blur-3xl group-hover:bg-indigo-500/20 transition duration-700"></div>
+                <div className="flex items-center space-x-2">
+                  <Sparkles className="w-4 h-4 text-indigo-400" />
+                  <h4 className="text-xs font-black text-indigo-300 uppercase tracking-wider">{t("booking.jugaad.title")}</h4>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  {t("booking.jugaad.desc")}
+                </p>
+                <div className="flex items-center gap-3">
+                  <label className="cursor-pointer bg-indigo-500 hover:bg-indigo-400 text-white text-[11px] font-bold py-2 px-4 rounded-lg shadow-md flex items-center gap-2 transition">
+                    <Camera className="w-3.5 h-3.5" />
+                    {t("booking.jugaad.button")}
+                    <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleJugaadScan} />
+                  </label>
+                  {isScanning && (
+                    <div className="flex items-center gap-2 text-[10px] text-indigo-300 animate-pulse font-bold">
+                      <div className="w-3 h-3 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin"></div>
+                      {t("booking.jugaad.scanning")}
+                    </div>
+                  )}
+                </div>
+                {scanResult && (
+                  <div className="bg-indigo-500/10 border border-indigo-500/30 p-2.5 rounded-lg">
+                    <p className="text-[10px] text-indigo-200 font-semibold leading-relaxed">
+                      <span className="font-black">{t("booking.jugaad.result")}</span> {scanResult}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {serviceName === "General Helper" && (
+                <div className="space-y-4 bg-slate-950/40 p-4 border border-white/5 rounded-2xl">
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-black text-slate-200 uppercase tracking-wider">
+                      Select Service Duration / Package *
+                    </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {HELPER_PACKAGES.map((pkg) => (
+                        <button
+                          key={pkg.hours}
+                          type="button"
+                          onClick={() => setHelperDuration(pkg.hours)}
+                          className={`p-3 rounded-xl border text-center transition flex flex-col items-center justify-center gap-1 cursor-pointer ${
+                            helperDuration === pkg.hours
+                              ? "bg-yellow-400 text-slate-950 border-yellow-400 font-extrabold shadow-lg shadow-yellow-400/10"
+                              : "bg-slate-900 border-white/5 hover:border-white/20 text-slate-300"
+                          }`}
+                        >
+                          <span className="text-[11px] font-bold">{pkg.label}</span>
+                          <span className={`text-[10px] font-black ${
+                            helperDuration === pkg.hours ? "text-slate-950" : "text-yellow-450"
+                          }`}>₹{pkg.price}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Specific Terms & Conditions Checklist */}
+                  <div className="pt-3.5 border-t border-white/5 space-y-2.5">
+                    <label className="block text-xs font-black text-slate-200 uppercase tracking-wider">
+                      General Helper Service Terms
+                    </label>
+                    <div className="space-y-2 text-[10px] text-slate-400 bg-slate-950/80 p-3.5 rounded-xl border border-white/5 leading-relaxed font-semibold">
+                      <div className="flex items-start gap-2">
+                        <span className="text-yellow-400 shrink-0">⚖️</span>
+                        <span>Maximum weight lifting limit is 10 KG.</span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="text-yellow-400 shrink-0">🍲</span>
+                        <span>For bookings of 6 hours or more, the customer must provide lunch/meals.</span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="text-yellow-400 shrink-0">🚫</span>
+                        <span>Only light, non-hazardous work is permitted.</span>
+                      </div>
+                    </div>
+                    
+                    <label className="flex items-start gap-2 text-[10px] font-black text-slate-300 hover:text-white cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        required
+                        className="mt-0.5 accent-yellow-400 w-3.5 h-3.5 shrink-0"
+                        checked={agreedToHelperTerms}
+                        onChange={(e) => setAgreedToHelperTerms(e.target.checked)}
+                      />
+                      <span>I agree to these General Helper terms and conditions.</span>
+                    </label>
+                  </div>
+                </div>
+              )}
 
               {/* Next Button */}
               <div className="pt-4 border-t border-white/5">

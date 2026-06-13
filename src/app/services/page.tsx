@@ -14,7 +14,8 @@ import {
   Building2,
   Droplets,
   LayoutDashboard,
-  ShieldCheck
+  ShieldCheck,
+  HelpingHand
 } from "lucide-react";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
@@ -35,6 +36,7 @@ const CATEGORIES = [
   { name: "CCTV Cameras", icon: Camera, desc: "Installation, repairs, and full security setup", price: "Starting ₹499" },
   { name: "Pest Control", icon: ShieldCheck, desc: "Cockroach control, termite treatment, bed bug removal", price: "Starting ₹599" },
   { name: "Car Wash", icon: Droplets, desc: "Doorstep Complete Car Wash & Vacuuming", price: "Starting ₹149" },
+  { name: "General Helper", icon: HelpingHand, desc: "Hire a trusted helper for light household chores, errands, and lifting up to 10 kg.", price: "Starting ₹200" },
 ];
 
 export default function ServicesPage() {

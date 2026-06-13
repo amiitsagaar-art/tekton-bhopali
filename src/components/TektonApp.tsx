@@ -13,6 +13,12 @@ import TektonLogo from "@/components/TektonLogo";
 
 import Footer from "@/components/Footer";
 import BookingModal from "@/components/BookingModal";
+import HeroSection from "./home/HeroSection";
+import { useLanguage } from "../context/LanguageContext";
+import HowItWorks from "./home/HowItWorks";
+import ServiceCategories from "./home/ServiceCategories";
+import WhyChooseUs from "./home/WhyChooseUs";
+import Testimonials from "./home/Testimonials";
 import { registerPushNotifications, addPushListeners, removePushListeners } from "@/utils/pushNotifications";
 import { auth } from "@/lib/firebase";
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
@@ -50,7 +56,8 @@ import {
   Headphones,
   Menu,
   Bell,
-  Tag
+  Tag,
+  HelpingHand
 } from "lucide-react";
 
 // Types
@@ -103,6 +110,7 @@ const CATEGORIES = [
   { name: "CCTV Cameras", icon: Camera, color: "bg-indigo-50 text-indigo-600 border-indigo-200", desc: "Security Setup" },
   { name: "Pest Control", icon: ShieldCheck, color: "bg-green-50 text-green-700 border-green-200", desc: "Cockroach & Termite" },
   { name: "Car Wash", icon: Droplets, color: "bg-orange-50 text-orange-600 border-orange-200", desc: "Doorstep Car Wash" },
+  { name: "General Helper", icon: HelpingHand, color: "bg-emerald-50 text-emerald-600 border-emerald-200", desc: "Errands, lifting & chores" },
 ];
 
 
@@ -192,6 +200,7 @@ const heroImages = [
 
 export default function TektonApp() {
   const router = useRouter();
+  const { language, toggleLanguage, t } = useLanguage();
   const isAdmin = false; // TODO: Replace with actual auth role state
 
   // Navigation & Filtering
@@ -1598,6 +1607,15 @@ export default function TektonApp() {
                 <RotateCcw className="w-4 h-4" />
               </button>
 
+              {/* Language Toggle */}
+              <button
+                onClick={toggleLanguage}
+                className="px-3 py-1.5 rounded-lg border border-yellow-400/50 bg-yellow-400/10 hover:bg-yellow-400/20 text-yellow-400 font-bold text-xs transition shadow-sm mr-1"
+                title="Toggle Language"
+              >
+                {language === "en" ? "अ" : "A"}
+              </button>
+
               {/* Notification Bell */}
               <div className="relative">
                 <button
@@ -1662,192 +1680,7 @@ export default function TektonApp() {
       </header>
 
       {/* UPGRADED HERO BANNER */}
-      <div className="relative overflow-hidden bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 py-16 md:py-24 px-4 border-b border-white/10 flex items-center min-h-[500px]">
-        {/* Background Image Carousel */}
-        <div className="absolute inset-0 z-0">
-          {heroImages.map((src, idx) => (
-            <img
-              key={src}
-              src={src}
-              alt="Hero background"
-              className={`hero-img-transition absolute inset-0 w-full h-full object-cover transition-all duration-[2000ms] ease-in-out ${activeImage === idx ? 'opacity-15 scale-105' : 'opacity-0 scale-100'}`}
-            />
-          ))}
-          <div className="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/95 to-slate-950/65 z-10"></div>
-          <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-slate-900/10 z-10"></div>
-          
-          {/* Decorative Glow Effects */}
-          <div className="absolute top-0 right-1/4 w-[40rem] h-[40rem] bg-yellow-500/10 rounded-full blur-[100px] z-10 anim-pulse-slow"></div>
-          <div className="absolute -bottom-1/4 left-1/4 w-[40rem] h-[40rem] bg-blue-500/10 rounded-full blur-[100px] z-10 anim-pulse-slower"></div>
-        </div>
-        
-        <div className="max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-8 relative z-10 w-full">
-          {/* Text Content Area */}
-          <div className="text-center lg:text-left flex-1 space-y-6">
-            <div className="flex items-center justify-center lg:justify-start space-x-2 flex-wrap gap-2 mb-2">
-              <span className="bg-yellow-400 text-slate-950 text-[10px] font-black uppercase px-3 py-1 rounded-full tracking-wider shadow-[0_0_15px_rgba(250,204,21,0.5)]">
-                Bhopal Exclusive
-              </span>
-              <span className="bg-white/10 backdrop-blur-md border border-white/20 text-yellow-400 text-[10px] font-bold px-3 py-1 rounded-full">
-                🏷️ Services Start @ ₹49
-              </span>
-              <span className="bg-emerald-500/20 border border-emerald-500/50 text-emerald-400 text-[10px] font-bold px-3 py-1 rounded-full hidden sm:inline-block">
-                ⚡ 10-Min Arrival Active
-              </span>
-            </div>
-            
-            <h1 className="text-4xl sm:text-5xl md:text-6xl font-black text-white leading-tight tracking-tight drop-shadow-lg">
-              Bhopal's Premium <br />
-              <span className="bg-gradient-to-r from-yellow-400 via-amber-400 to-yellow-500 bg-clip-text text-transparent">
-                Skilled Worker
-              </span>{" "}
-              Marketplace.
-            </h1>
-            
-            <p className="text-base sm:text-lg text-slate-350 font-medium max-w-xl mx-auto lg:mx-0 leading-relaxed">
-              Get verified Plumbers, Electricians, and Carpenters at your doorstep in minutes.
-            </p>
-
-            <div className="pt-2 flex flex-col sm:flex-row items-center gap-4 justify-center lg:justify-start">
-              <button
-                onClick={() => triggerBooking(null)}
-                className="w-full sm:w-auto bg-yellow-500 hover:bg-yellow-400 text-slate-950 text-base font-black px-8 py-4 rounded-xl shadow-[0_0_20px_rgba(250,204,21,0.4)] hover:shadow-[0_0_30px_rgba(250,204,21,0.6)] flex items-center justify-center space-x-2 transition-all transform hover:-translate-y-1 hover:scale-105"
-              >
-                <span>Book a Service</span>
-                <ArrowRight className="w-5 h-5" />
-              </button>
-              
-              <Link
-                href="/join-as-partner"
-                className="w-full sm:w-auto border border-white/20 hover:border-yellow-500/50 hover:bg-white/5 text-white hover:text-yellow-400 text-base font-bold px-8 py-4 rounded-xl flex items-center justify-center space-x-2 transition-all transform hover:-translate-y-1 hover:scale-105"
-              >
-                <span>Join as Partner</span>
-              </Link>
-            </div>
-
-            <div className="flex items-center gap-3 justify-center lg:justify-start pt-2">
-              <div className="flex -space-x-3">
-                {heroImages.slice(0, 4).map((src, i) => (
-                  <img key={i} src={src} className="w-10 h-10 rounded-full border-2 border-slate-950 object-cover shadow-sm" alt={`Worker ${i+1}`} />
-                ))}
-                <div className="w-10 h-10 rounded-full border-2 border-slate-950 bg-slate-800 flex items-center justify-center text-xs text-white font-bold z-10 shadow-sm">
-                  +5k
-                </div>
-              </div>
-              <div className="text-left leading-tight">
-                <div className="flex items-center text-yellow-400">
-                  <Star className="w-3.5 h-3.5 fill-current" />
-                  <Star className="w-3.5 h-3.5 fill-current" />
-                  <Star className="w-3.5 h-3.5 fill-current" />
-                  <Star className="w-3.5 h-3.5 fill-current" />
-                  <Star className="w-3.5 h-3.5 fill-current" />
-                </div>
-                <span className="text-xs text-slate-400 font-medium">Trusted in Bhopal</span>
-              </div>
-            </div>
-          </div>
-          
-          {/* STATS CARDS (Desktop Right Side) */}
-          <div className="hidden lg:flex w-5/12 relative items-center justify-center">
-            <div className="relative w-[320px] space-y-4">
-              {/* Card 1 */}
-              <div className="glass-card-3d group cursor-default">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-slate-455 text-xs font-semibold uppercase tracking-widest mb-1">Active Pros Online</p>
-                    <p className="text-4xl font-black text-white tracking-tight">5,200+</p>
-                    <p className="text-emerald-400 text-xs font-bold mt-1 flex items-center gap-1">
-                      <TrendingUp className="w-3 h-3" /> +128 joined this week
-                    </p>
-                  </div>
-                  <div className="w-14 h-14 rounded-2xl bg-yellow-400/20 border border-yellow-400/30 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
-                    <Users className="w-7 h-7 text-yellow-400" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Card 2 */}
-              <div className="glass-card-3d group cursor-default translate-x-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-slate-455 text-xs font-semibold uppercase tracking-widest mb-1">Avg. Response Time</p>
-                    <p className="text-4xl font-black text-white tracking-tight">8 min</p>
-                    <p className="text-sky-400 text-xs font-bold mt-1 flex items-center gap-1">
-                      <Clock3 className="w-3 h-3" /> Bhopal Express Dispatch
-                    </p>
-                  </div>
-                  <div className="w-14 h-14 rounded-2xl bg-sky-400/20 border border-sky-400/30 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
-                    <Clock3 className="w-7 h-7 text-sky-400" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Card 3 */}
-              <div className="glass-card-3d group cursor-default">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-slate-455 text-xs font-semibold uppercase tracking-widest mb-1">Customer Rating</p>
-                    <div className="flex items-baseline gap-2">
-                      <p className="text-4xl font-black text-white tracking-tight">4.9</p>
-                      <div className="flex">{[1,2,3,4,5].map(s => <Star key={s} className="w-3.5 h-3.5 text-yellow-450 fill-yellow-450" />)}</div>
-                    </div>
-                    <p className="text-purple-400 text-xs font-bold mt-1 flex items-center gap-1">
-                      <Award className="w-3 h-3" /> 12,000+ verified reviews
-                    </p>
-                  </div>
-                  <div className="w-14 h-14 rounded-2xl bg-purple-400/20 border border-purple-400/30 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
-                    <Award className="w-7 h-7 text-purple-400" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Floating badges */}
-              <div className="absolute -top-6 -right-4 bg-emerald-500/20 backdrop-blur-md border border-emerald-500/40 px-3 py-2 rounded-2xl shadow-xl anim-bounce-slow">
-                <p className="text-emerald-400 text-xs font-black">⚡ LIVE</p>
-              </div>
-              <div className="absolute -bottom-4 -left-4 anim-pulse-slow">
-                <div className="bg-white/10 backdrop-blur-md border border-white/20 px-3 py-2 rounded-xl">
-                  <p className="text-white text-[10px] font-bold">🏆 #1 in Bhopal</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-        </div>
-
-        {/* STATS CARDS (Mobile / Tablet Stacked Below Hero, hidden on desktop) */}
-        <div className="lg:hidden grid grid-cols-1 sm:grid-cols-3 gap-4 w-full mt-12 relative z-10">
-          <div className="glass-card-3d flex items-center justify-between p-4 bg-slate-900/60 backdrop-blur-md border border-white/10 rounded-2xl">
-            <div>
-              <p className="text-slate-455 text-[10px] font-bold uppercase tracking-wider mb-0.5">Active Pros Online</p>
-              <p className="text-2xl font-black text-white">5,200+</p>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-yellow-400/20 flex items-center justify-center">
-              <Users className="w-5 h-5 text-yellow-400" />
-            </div>
-          </div>
-
-          <div className="glass-card-3d flex items-center justify-between p-4 bg-slate-900/60 backdrop-blur-md border border-white/10 rounded-2xl">
-            <div>
-              <p className="text-slate-455 text-[10px] font-bold uppercase tracking-wider mb-0.5">Avg. Response</p>
-              <p className="text-2xl font-black text-white">8 min</p>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-sky-400/20 flex items-center justify-center">
-              <Clock3 className="w-5 h-5 text-sky-400" />
-            </div>
-          </div>
-
-          <div className="glass-card-3d flex items-center justify-between p-4 bg-slate-900/60 backdrop-blur-md border border-white/10 rounded-2xl">
-            <div>
-              <p className="text-slate-455 text-[10px] font-bold uppercase tracking-wider mb-0.5">Rating</p>
-              <p className="text-2xl font-black text-white">4.9 ⭐</p>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-purple-400/20 flex items-center justify-center">
-              <Award className="w-5 h-5 text-purple-400" />
-            </div>
-          </div>
-        </div>
-      </div>
+      <HeroSection activeImage={activeImage} triggerBooking={triggerBooking} />
 
       {/* SEARCH SECTION */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-8 relative z-30 w-full">
@@ -1887,60 +1720,7 @@ export default function TektonApp() {
       </div>
 
       {/* HOW IT WORKS SECTION */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-16 mb-8">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl font-extrabold text-white tracking-tight sm:text-4xl">
-            How <span className="text-yellow-400">Tekton</span> Works
-          </h2>
-          <p className="mt-3 max-w-2xl mx-auto text-sm sm:text-base text-slate-400">
-            Three simple steps to get high-quality services at your doorstep in Bhopal.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {/* Card 1 */}
-          <div className="bg-slate-800/50 backdrop-blur border border-white/10 rounded-2xl p-6 relative overflow-hidden group hover:border-yellow-500/30 transition-all duration-300">
-            <div className="absolute top-4 right-4 text-5xl font-extrabold text-white/[0.03] select-none tracking-tighter">
-              01
-            </div>
-            <div className="w-12 h-12 rounded-xl bg-yellow-400/10 border border-yellow-400/20 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
-              <Wrench className="w-6 h-6 text-yellow-400" />
-            </div>
-            <h3 className="text-xl font-bold text-white mb-2">Choose a Service</h3>
-            <p className="text-sm text-slate-400 leading-relaxed">
-              Select the service you need from our extensive range of options like plumbing, electrical work, and carpentry.
-            </p>
-          </div>
-
-          {/* Card 2 */}
-          <div className="bg-slate-800/50 backdrop-blur border border-white/10 rounded-2xl p-6 relative overflow-hidden group hover:border-yellow-500/30 transition-all duration-300">
-            <div className="absolute top-4 right-4 text-5xl font-extrabold text-white/[0.03] select-none tracking-tighter">
-              02
-            </div>
-            <div className="w-12 h-12 rounded-xl bg-yellow-400/10 border border-yellow-400/20 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
-              <CheckCircle2 className="w-6 h-6 text-yellow-400" />
-            </div>
-            <h3 className="text-xl font-bold text-white mb-2">Instant Confirmation</h3>
-            <p className="text-sm text-slate-400 leading-relaxed">
-              Our advanced matching system connects you with a verified partner in minutes, ensuring speedy arrival.
-            </p>
-          </div>
-
-          {/* Card 3 */}
-          <div className="bg-slate-800/50 backdrop-blur border border-white/10 rounded-2xl p-6 relative overflow-hidden group hover:border-yellow-500/30 transition-all duration-300">
-            <div className="absolute top-4 right-4 text-5xl font-extrabold text-white/[0.03] select-none tracking-tighter">
-              03
-            </div>
-            <div className="w-12 h-12 rounded-xl bg-yellow-400/10 border border-yellow-400/20 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
-              <Star className="w-6 h-6 text-yellow-400 fill-yellow-400/10" />
-            </div>
-            <h3 className="text-xl font-bold text-white mb-2">Job Done</h3>
-            <p className="text-sm text-slate-400 leading-relaxed">
-              Our verified partner completes your task cleanly. You pay only after checking the work to your satisfaction.
-            </p>
-          </div>
-        </div>
-      </div>
+      <HowItWorks />
 
       {/* MAIN NAVIGATION TABS */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
@@ -1982,46 +1762,12 @@ export default function TektonApp() {
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
           
           {/* CATEGORIES GRID */}
-          <div className="mb-8">
-            <h2 className="text-xs font-bold uppercase tracking-widest text-slate-450 mb-4">
-              Select Task Category
-            </h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {CATEGORIES.map((cat, idx) => {
-                const IconComponent = cat.icon;
-                const isSelected = selectedCategory === cat.name;
-                return (
-                  <button
-                    key={cat.name + idx}
-                    onClick={() => {
-                      setSelectedCategory(cat.name);
-                      triggerBooking(null, cat.name);
-                    }}
-                    className={`rounded-2xl border text-left p-4 transition-all duration-300 flex items-center space-x-3 hover:-translate-y-1.5 relative overflow-hidden group cursor-pointer ${
-                      isSelected
-                        ? "bg-slate-900 text-white border-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.2)] ring-2 ring-yellow-400/50"
-                        : "bg-slate-900/40 hover:bg-slate-900/60 border-white/10 text-slate-200 shadow-md hover:border-yellow-400/30"
-                    }`}
-                  >
-                    <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/5 to-transparent group-hover:animate-[shimmer_1.5s_infinite] pointer-events-none" />
-                    
-                    <div className={`p-2.5 rounded-xl shrink-0 ${isSelected ? "bg-yellow-400 text-slate-950" : "bg-slate-800 text-yellow-400"}`}>
-                      <IconComponent className="w-5 h-5 sm:w-6 sm:h-6" />
-                    </div>
-                    
-                    <div className="truncate flex-1">
-                      <span className="block text-xs sm:text-sm md:text-base font-bold leading-tight truncate">
-                        {cat.name}
-                      </span>
-                      <span className="block text-[10px] text-slate-400 leading-tight truncate">
-                        {cat.desc}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <ServiceCategories 
+            categories={CATEGORIES}
+            selectedCategory={selectedCategory}
+            setSelectedCategory={setSelectedCategory}
+            triggerBooking={triggerBooking}
+          />
 
           {/* FILTER STATUS / INFO BAR */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-slate-900/50 backdrop-blur-md px-4 py-3 rounded-xl border border-white/10 mb-6 gap-2 text-slate-350">
@@ -2238,6 +1984,12 @@ export default function TektonApp() {
                   className="bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg"
                 >
                   🧹 Deep Cleaning
+                </button>
+                <button
+                  onClick={() => triggerBooking(null, "General Helper")}
+                  className="bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg"
+                >
+                  🤝 General Helper
                 </button>
               </div>
 
@@ -2605,15 +2357,22 @@ export default function TektonApp() {
               return;
             }
 
-            await fetchAppointments();
-            showToast(`⚡ Appointment Confirmed! Assigned artisan dispatching to ${finalData.locationZone} shortly.`);
-            addNotification(`New Booking: ${finalData.serviceCategory} task on ${finalData.visitDate}`);
-            setCurrentTab("appointments");
+            const resData = await res.json();
+            const bookingId = resData.bookingId || "TEK-???";
 
             // Save user session based on booking phone
             setUserPhone(finalData.phoneNumber);
             localStorage.setItem("tektonUserPhone", finalData.phoneNumber);
             setIsLoggedIn(true);
+
+            // Redirect to success page with booking details
+            const params = new URLSearchParams({
+              id: bookingId,
+              service: finalData.serviceCategory || "",
+              date: finalData.visitDate || "",
+              time: finalData.timeSlot || "",
+            });
+            window.location.href = `/booking-success?${params.toString()}`;
 
           } catch (err) {
             console.error(err);
@@ -3444,233 +3203,23 @@ export default function TektonApp() {
       )}
 
       {/* RECENT WORK GALLERY SECTION */}
-      <div className="bg-slate-50 border-t border-slate-200 py-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-10">
-            <span className="bg-amber-100 text-amber-850 text-[10px] font-black uppercase px-3 py-1 rounded-full border border-amber-200">
-              Platform Authenticity
-            </span>
-            <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mt-2 mb-3 tracking-tight">
-              Real Work Done by Our <span className="text-amber-500">Bhopal Pros</span>
-            </h2>
-            <p className="text-slate-500 text-sm max-w-xl mx-auto">
-              No generic stock photos. These are real project snapshots captured directly from recent structural renovations and home assemblies across Bhopal colonies.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {(recentWorks.length > 0 ? recentWorks : [
-              {
-                id: 1,
-                title: "Heavy Industrial Gate Metal Fabrication",
-                category: "Fabrication / Welding",
-                location: "Govindpura Industrial",
-                imageUrl: "https://images.unsplash.com/photo-1504307651254-35680f356dfd?q=80&w=800&auto=format&fit=crop",
-                cost: "₹14,999"
-              },
-              {
-                id: 2,
-                title: "Premium Main Door Polish & Lock Installation",
-                category: "Carpenter / Woodwork",
-                location: "Minal Residency",
-                imageUrl: "https://images.unsplash.com/photo-1622372738946-62e02505feb3?q=80&w=800&auto=format&fit=crop",
-                cost: "₹2,499"
-              },
-              {
-                id: 3,
-                title: "Modular Kitchen Woodwork & Fitting Setup",
-                category: "Carpenter / Modular",
-                location: "Arera Colony",
-                imageUrl: "https://images.unsplash.com/photo-1556910103-1c02745a8281?q=80&w=800&auto=format&fit=crop",
-                cost: "₹18,500"
-              }
-            ]).map((work) => (
-              <div key={work.id} className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_15px_40px_rgba(248,203,70,0.15)] hover:-translate-y-2 transition-all duration-500 group flex flex-col justify-between">
-                <div>
-                  <div className="h-56 overflow-hidden relative">
-                    <img src={work.imageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-all duration-500" alt={work.title} />
-                    <span className="absolute top-3 left-3 bg-slate-900/80 backdrop-blur-md text-white text-[9px] font-bold px-2.5 py-1 rounded-md">{work.location}</span>
-                  </div>
-                  <div className="p-5">
-                    <h4 className="font-bold text-sm text-slate-900">{work.title}</h4>
-                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                      {work.title} project successfully completed in Bhopal by our skilled professionals.
-                    </p>
-                  </div>
-                </div>
-                <div className="p-5 pt-0">
-                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
-                    <span className="text-[10px] text-slate-400 font-bold">Category: {work.category}</span>
-                    {"cost" in work && (
-                      <span className="text-xs font-black text-emerald-650">{work.cost} Total Cost</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+      <WhyChooseUs recentWorks={recentWorks} />
 
       {/* CUSTOMER REVIEWS SECTION */}
-      <div className="bg-white border-t border-slate-200 py-12 mt-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-10">
-            <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mb-3 tracking-tight">
-              Trusted by 10,000+ <span className="text-amber-500">Bhopal Residents</span>
-            </h2>
-            <p className="text-slate-500 text-sm max-w-xl mx-auto">
-              Real feedback from real people across Bhopal. See what your neighbors are saying about our 10-minute instant response service.
-            </p>
-          </div>
-
-          <div className="overflow-hidden pb-6 relative w-full group">
-            <div className="flex space-x-4 animate-marquee w-max">
-              {[...reviewsList, ...reviewsList].map((review, idx) => (
-                <div 
-                  key={idx} 
-                  className="flex-shrink-0 w-[300px] sm:w-[350px] bg-white border border-slate-200/80 rounded-3xl p-6 shadow-[0_4px_15px_rgba(0,0,0,0.03)] hover:shadow-[0_10px_30px_rgba(0,0,0,0.08)] hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between relative overflow-hidden"
-                >
-                  <div className="absolute -right-4 -top-4 w-24 h-24 bg-amber-50 rounded-full blur-2xl opacity-0 hover:opacity-100 transition-opacity duration-500"></div>
-                  <div className="relative z-10">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center font-black text-amber-700 text-lg border border-amber-200">
-                        {review.name.charAt(0)}
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-slate-900 text-sm leading-tight">{review.name}</h4>
-                        <div className="flex items-center text-[10px] text-slate-500 mt-0.5">
-                          <MapPin className="w-3 h-3 mr-0.5 text-slate-400" /> {review.location}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex space-x-0.5">
-                      {[...Array(review.rating)].map((_, i) => (
-                        <Star key={i} className="w-4 h-4 fill-amber-400 text-amber-400" />
-                      ))}
-                    </div>
-                  </div>
-                  <p className="text-sm text-slate-900 leading-relaxed italic font-medium">
-                    "{review.text}"
-                  </p>
-                </div>
-                <div className="mt-6 pt-4 border-t border-slate-200 flex items-center justify-between">
-                  <span className="bg-white border border-slate-200 text-slate-700 text-[10px] font-bold px-2.5 py-1 rounded-md shadow-xs">
-                    {review.service}
-                  </span>
-                  <span className="text-[10px] text-slate-400 font-bold">
-                    {review.date}
-                  </span>
-                </div>
-              </div>
-            ))}
-            </div>
-            {/* Gradient overlays for smooth fading edges */}
-            <div className="absolute top-0 bottom-0 left-0 w-24 bg-gradient-to-r from-white to-transparent pointer-events-none"></div>
-            <div className="absolute top-0 bottom-0 right-0 w-24 bg-gradient-to-l from-white to-transparent pointer-events-none"></div>
-          </div>
-
-          {/* WRITE A REVIEW FORM */}
-          <div className="max-w-xl mx-auto mt-12 p-6 bg-slate-50/80 backdrop-blur-md border border-slate-200 rounded-[2rem] shadow-lg animate-fade-in relative overflow-hidden">
-            <div className="absolute -right-16 -bottom-16 w-32 h-32 bg-amber-400/10 rounded-full blur-2xl pointer-events-none"></div>
-            
-            <h3 className="text-base font-black text-slate-900 mb-1 tracking-tight text-center flex items-center justify-center gap-1.5">
-              ✍️ Share Your Bhopal Tekton Experience!
-            </h3>
-            <p className="text-xs text-slate-500 text-center mb-5 font-medium">Your rating helps us reward our partner workers directly.</p>
-
-            <form onSubmit={handleSubmitFeedback} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wide">Your Name</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Ramesh Saxena"
-                    value={newFeedbackName}
-                    onChange={(e) => setNewFeedbackName(e.target.value)}
-                    className="w-full bg-white border border-slate-200 px-4 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition text-slate-900 placeholder-slate-400"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wide">Bhopal Colony</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Arera Colony"
-                    value={newFeedbackLocation}
-                    onChange={(e) => setNewFeedbackLocation(e.target.value)}
-                    className="w-full bg-white border border-slate-200 px-4 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition text-slate-900 placeholder-slate-400"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wide">Service Category</label>
-                  <select
-                    value={newFeedbackService}
-                    onChange={(e) => setNewFeedbackService(e.target.value)}
-                    title="Select service received"
-                    className="w-full bg-white border border-slate-200 px-4 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:border-amber-500 transition"
-                  >
-                    <option value="Plumber">Plumbing</option>
-                    <option value="Carpenter">Carpenter</option>
-                    <option value="Electrician">Electrician</option>
-                    <option value="Painter">Painter</option>
-                    <option value="Tank Cleaning">Tank Cleaning</option>
-                    <option value="Interior Design">Interior Design</option>
-                    <option value="Exterior Design">Exterior Design</option>
-                    <option value="Cleaning Service">Cleaning Service</option>
-                    <option value="AC & Appliances">AC & Appliances</option>
-                    <option value="CCTV Cameras">CCTV Cameras</option>
-                    <option value="General">General/Other</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wide">Select Rating</label>
-                  <div className="flex items-center space-x-1.5 mt-1.5">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <button
-                        key={star}
-                        type="button"
-                        title={`Rate ${star} Star${star > 1 ? 's' : ''}`}
-                        onClick={() => setNewFeedbackRating(star)}
-                        className="focus:outline-none transition hover:scale-125"
-                      >
-                        <Star
-                          className={`w-5 h-5 ${ star <= newFeedbackRating ? "fill-amber-400 text-amber-400" : "text-slate-350" } text-slate-900 bg-white placeholder-slate-400`}
-                        />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wide">Your Experience / Feedback</label>
-                <textarea
-                  required
-                  rows={2}
-                  placeholder="Share your experience with Bhopal residents..."
-                  value={newFeedbackText}
-                  onChange={(e) => setNewFeedbackText(e.target.value)}
-                  className="w-full bg-white border border-slate-200 px-4 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition text-slate-900 placeholder-slate-400"
-                ></textarea>
-              </div>
-
-              <button
-                type="submit"
-                className="w-full bg-slate-900 hover:bg-slate-850 text-white font-extrabold text-xs py-3 rounded-xl shadow-md transition duration-300 border border-slate-850 hover:scale-[1.02] flex items-center justify-center gap-1.5"
-              >
-                Post Review Live 🚀
-              </button>
-            </form>
-          </div>
-        </div>
-      </div>
+      <Testimonials 
+        reviewsList={reviewsList}
+        newFeedbackName={newFeedbackName}
+        setNewFeedbackName={setNewFeedbackName}
+        newFeedbackLocation={newFeedbackLocation}
+        setNewFeedbackLocation={setNewFeedbackLocation}
+        newFeedbackService={newFeedbackService}
+        setNewFeedbackService={setNewFeedbackService}
+        newFeedbackRating={newFeedbackRating}
+        setNewFeedbackRating={setNewFeedbackRating}
+        newFeedbackText={newFeedbackText}
+        setNewFeedbackText={setNewFeedbackText}
+        handleSubmitFeedback={handleSubmitFeedback}
+      />
 
       {/* WORK-THEMED MOOD LIFTER */}
       {showHappyMessage && (

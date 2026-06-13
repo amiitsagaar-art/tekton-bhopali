@@ -2,11 +2,14 @@
 
 import React from "react";
 import { ToastProvider } from "../context/ToastContext";
+import { LanguageProvider } from "../context/LanguageContext";
 
 export const ClientProviders: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return (
     <ToastProvider>
-      {children}
+      <LanguageProvider>
+        {children}
+      </LanguageProvider>
     </ToastProvider>
   );
 };

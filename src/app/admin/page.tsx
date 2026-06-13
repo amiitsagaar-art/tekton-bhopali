@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
-import { LogOut, Calendar, Users, FileCheck, CheckCircle, XCircle, AlertCircle, MapPin, Star, Trash2, Image as ImageIcon, UploadCloud, ShieldOff, Shield, Tag, IndianRupee, Plus, ToggleLeft, ToggleRight, Wrench, Hammer, Bolt, Paintbrush, Sparkles, Snowflake, BookOpen, Settings } from "lucide-react"
+import { LogOut, Calendar, Users, FileCheck, CheckCircle, XCircle, AlertCircle, MapPin, Star, Trash2, Image as ImageIcon, UploadCloud, ShieldOff, Shield, Tag, IndianRupee, Plus, ToggleLeft, ToggleRight, Wrench, Hammer, Bolt, Paintbrush, Sparkles, Snowflake, BookOpen, Settings, HelpingHand } from "lucide-react"
 import Link from "next/link"
 
 const ICON_MAP: Record<string, React.ComponentType<any>> = {
@@ -18,6 +18,7 @@ const ICON_MAP: Record<string, React.ComponentType<any>> = {
   "Civil Architect": Settings,
   "Civil Construction": Settings,
   "Home Tutors": BookOpen,
+  "General Helper": HelpingHand,
 };
 
 const getServiceIcon = (category: string): React.ComponentType<any> => {
@@ -42,19 +43,15 @@ export default function AdminControlPanel() {
   const [adminToken, setAdminToken] = useState("")
   const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL || ""
 
-  // Helper to verify admin email
+  // Helper to verify admin email - relies on env variable only
   const isAdmin = (email?: string | null) => {
     if (!email) return false;
     const cleanEmail = email.toLowerCase().trim();
     const envAdminEmail = ADMIN_EMAIL.toLowerCase().trim();
-    
-    console.log("Admin Guard Debug:", { loggedIn: email, expected: ADMIN_EMAIL });
-
     if (envAdminEmail && cleanEmail === envAdminEmail) {
       return true;
     }
-    // Fail-Safe Hardcoded Fallbacks
-    return cleanEmail === "amiitsagaar@gmail.com" || cleanEmail === "amiit.sagaar@gmail.com";
+    return false;
   }
 
   // Helper: admin headers for all sensitive API calls
@@ -66,11 +63,11 @@ export default function AdminControlPanel() {
   // Firebase Auth listener — runs once on mount
   useEffect(() => {
     const localEmail = localStorage.getItem("tektonUserEmail");
+    const isLocalAdmin = localEmail && ADMIN_EMAIL && localEmail.toLowerCase().trim() === ADMIN_EMAIL.toLowerCase().trim();
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         setAuthUser(user);
-      } else if (localEmail && (localEmail.toLowerCase().trim() === "amiitsagaar@gmail.com" || localEmail.toLowerCase().trim() === "amiit.sagaar@gmail.com" || (ADMIN_EMAIL && localEmail.toLowerCase().trim() === ADMIN_EMAIL.toLowerCase().trim()))) {
-        // Mock User object for local admin storage bypass
+      } else if (isLocalAdmin) {
         setAuthUser({ email: localEmail } as User);
       } else {
         setAuthUser(null);
@@ -78,7 +75,7 @@ export default function AdminControlPanel() {
       setAuthLoading(false);
     });
 
-    if (localEmail && (localEmail.toLowerCase().trim() === "amiitsagaar@gmail.com" || localEmail.toLowerCase().trim() === "amiit.sagaar@gmail.com" || (ADMIN_EMAIL && localEmail.toLowerCase().trim() === ADMIN_EMAIL.toLowerCase().trim()))) {
+    if (isLocalAdmin) {
       setAuthUser({ email: localEmail } as User);
       setAuthLoading(false);
     }
@@ -90,12 +87,11 @@ export default function AdminControlPanel() {
   useEffect(() => {
     const savedToken = localStorage.getItem("tektonAdminToken");
     const localEmail = localStorage.getItem("tektonUserEmail");
-    const isLocalEmailAdmin = localEmail && (localEmail.toLowerCase().trim() === "amiitsagaar@gmail.com" || localEmail.toLowerCase().trim() === "amiit.sagaar@gmail.com" || (ADMIN_EMAIL && localEmail.toLowerCase().trim() === ADMIN_EMAIL.toLowerCase().trim()));
+    const isLocalEmailAdmin = localEmail && ADMIN_EMAIL && localEmail.toLowerCase().trim() === ADMIN_EMAIL.toLowerCase().trim();
 
     if (authUser && isAdmin(authUser.email)) {
       setIsTokenVerified(true);
     } else if (savedToken && isLocalEmailAdmin) {
-      // Verify stored token on mount
       fetch("/api/auth/verify-admin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -157,8 +153,11 @@ export default function AdminControlPanel() {
     locations: string
     experienceYears?: number
     aadharUrl?: string
+    aadhaarUrl?: string
+    avatarUrl?: string
     status: string
     isApproved: boolean
+    kycStatus?: boolean
   }>>([])
   
   const [serviceAreas, setServiceAreas] = useState<Array<{
@@ -321,6 +320,24 @@ export default function AdminControlPanel() {
       if (!res.ok) throw new Error("Failed to toggle approval")
       setWorkers(prev =>
         prev.map(w => (w.id === workerId ? { ...w, isApproved: newApproval, status: newStatus } : w))
+      )
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  // Toggle KYC status directly
+  const toggleWorkerKyc = async (workerId: string, currentKyc: boolean) => {
+    try {
+      const newKyc = !currentKyc;
+      const res = await fetch(`/api/workers/${workerId}`, {
+        method: "PATCH",
+        headers: adminHeaders,
+        body: JSON.stringify({ kycStatus: newKyc }),
+      })
+      if (!res.ok) throw new Error("Failed to toggle KYC status")
+      setWorkers(prev =>
+        prev.map(w => (w.id === workerId ? { ...w, kycStatus: newKyc } : w))
       )
     } catch (e) {
       console.error(e)
@@ -890,7 +907,7 @@ export default function AdminControlPanel() {
                     <th className="px-6 py-4">Phone Number</th>
                     <th className="px-6 py-4">Category</th>
                     <th className="px-6 py-4">Experience</th>
-                    <th className="px-6 py-4 text-red-400">Aadhaar No.</th>
+                    <th className="px-6 py-4 text-yellow-400">KYC Status</th>
                     <th className="px-6 py-4">Approval Status</th>
                     <th className="px-6 py-4 text-right">Actions</th>
                   </tr>
@@ -899,11 +916,42 @@ export default function AdminControlPanel() {
                   {workers.length > 0 ? workers.map(w => (
                     <tr key={w.id} className="hover:bg-slate-800/30 transition-colors">
                       <td className="px-6 py-4 font-mono font-bold text-slate-300">{w.id}</td>
-                      <td className="px-6 py-4 font-bold text-white">{w.name}</td>
+                      <td className="px-6 py-4 flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-full overflow-hidden border border-white/10 shrink-0 bg-slate-950 flex items-center justify-center">
+                          {w.avatarUrl ? (
+                            <img src={w.avatarUrl} alt={w.name} className="object-cover w-full h-full" />
+                          ) : (
+                            <Users className="w-4 h-4 text-slate-500" />
+                          )}
+                        </div>
+                        <span className="font-bold text-white">{w.name}</span>
+                      </td>
                       <td className="px-6 py-4 font-mono text-slate-300">{w.phone}</td>
                       <td className="px-6 py-4 text-slate-300">{w.category}</td>
                       <td className="px-6 py-4 text-slate-300">{w.experienceYears ?? "-"}</td>
-                      <td className="px-6 py-4 font-mono font-bold text-slate-500">{maskAadhar(w.aadharUrl)}</td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col gap-1">
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider inline-block w-fit ${
+                            w.kycStatus
+                              ? "bg-emerald-500/20 text-emerald-450 border border-emerald-500/30"
+                              : "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                          }`}>
+                            {w.kycStatus ? "Verified" : "Pending"}
+                          </span>
+                          {(w.aadhaarUrl || w.aadharUrl) ? (
+                            <a
+                              href={w.aadhaarUrl || w.aadharUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[10px] text-yellow-400 hover:underline font-bold"
+                            >
+                              View ID Proof
+                            </a>
+                          ) : (
+                            <span className="text-[10px] text-slate-500 font-medium">No Doc Uploaded</span>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-6 py-4">
                         <button
                           onClick={() => toggleWorkerApproval(w.id, w.isApproved)}
@@ -920,6 +968,17 @@ export default function AdminControlPanel() {
                         </button>
                       </td>
                       <td className="px-6 py-4 text-right space-x-2">
+                        <button
+                          onClick={() => toggleWorkerKyc(w.id, !!w.kycStatus)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition inline-flex items-center gap-1 ${
+                            w.kycStatus
+                              ? "bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border-amber-500/20"
+                              : "bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/20"
+                          }`}
+                        >
+                          <FileCheck className="w-3.5 h-3.5" />
+                          {w.kycStatus ? "Unverify KYC" : "Verify KYC"}
+                        </button>
                         <button
                           disabled={w.isApproved}
                           onClick={() => updateWorkerStatus(w.id, "Approved")}
@@ -1027,6 +1086,7 @@ export default function AdminControlPanel() {
                       <option value="Cleaning">Cleaning</option>
                       <option value="AC Repair">AC Repair</option>
                       <option value="Home Tutors">Home Tutors</option>
+                      <option value="General Helper">General Helper</option>
                     </select>
                   </div>
                   <div>

@@ -14,6 +14,7 @@ const DEFAULT_PRICES: Record<string, number> = {
   "AC Repair": 399,
   "Civil Work": 499,
   "Home Tutors": 299,
+  "General Helper": 200,
 };
 
 // GET — public, returns all service prices + active coupons

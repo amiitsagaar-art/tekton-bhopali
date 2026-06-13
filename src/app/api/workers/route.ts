@@ -105,6 +105,7 @@ export async function POST(request: Request) {
       Electrician: "https://images.unsplash.com/photo-1624561172888-ac93c696e10c?w=150&auto=format&fit=crop&q=80",
       Painter: "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150&auto=format&fit=crop&q=80",
       Cleaner: "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80",
+      "General Helper": "https://images.unsplash.com/photo-1521791136368-1a8682707636?w=150&auto=format&fit=crop&q=80",
     };
     
     const finalAvatarUrl = defaultAvatars[serviceCategory] || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80";

@@ -15,6 +15,7 @@ export const workers = pgTable("workers", {
   isVerified: boolean("is_verified").notNull().default(true),
   status: varchar("status", { length: 50 }).notNull().default("Approved"),
   isApproved: boolean("is_approved").notNull().default(false),
+  kycStatus: boolean("kyc_status").notNull().default(false),
   aadhaarUrl: text("aadhaar_url"),
   panUrl: text("pan_url"),
   passbookUrl: text("passbook_url"),

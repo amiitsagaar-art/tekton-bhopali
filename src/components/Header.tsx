@@ -65,6 +65,7 @@ export default function Header() {
               <Link href="/" className={getDesktopClass("/")}>Home</Link>
               <Link href="/services" className={getDesktopClass("/services")}>Services</Link>
               <Link href="/recent-work" className={getDesktopClass("/recent-work")}>Recent Work</Link>
+              <Link href="/my-bookings" className={getDesktopClass("/my-bookings")}>My Bookings</Link>
               <Link href="/about" className={getDesktopClass("/about")}>About Us</Link>
               <Link href="/contact" className={getDesktopClass("/contact")}>Contact</Link>
             </nav>
@@ -118,6 +119,9 @@ export default function Header() {
               </Link>
               <Link href="/services" onClick={() => setIsMobileMenuOpen(false)} className={getMobileClass("/services")}>
                 Services
+              </Link>
+              <Link href="/my-bookings" onClick={() => setIsMobileMenuOpen(false)} className={getMobileClass("/my-bookings")}>
+                My Bookings
               </Link>
               <Link href="/recent-work" onClick={() => setIsMobileMenuOpen(false)} className={getMobileClass("/recent-work")}>
                 Recent Work

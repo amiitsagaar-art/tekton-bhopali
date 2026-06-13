@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { appointments, workers } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { sendWhatsAppMessage } from "@/utils/whatsapp";
 
 /**
  * PATCH /api/appointments/[id]/partner-update
  * Partner-only route — authenticates via x-worker-phone header.
- * Allows partner to Accept (Confirmed) or Decline (Pending) a job assigned to them.
+ * Allows partner to Accept (Confirmed), Decline (Pending), or Complete a job.
  */
 export async function PATCH(
   request: Request,
@@ -71,6 +72,12 @@ export async function PATCH(
       }
     }
 
+    // Validate allowed statuses
+    const allowedStatuses = ["Confirmed", "Pending", "Unassigned", "Completed"];
+    if (status && !allowedStatuses.includes(status)) {
+      return NextResponse.json({ error: `Status "${status}" is not allowed via this route.` }, { status: 400 });
+    }
+
     const updateFields: Record<string, unknown> = {};
     if (status !== undefined) updateFields.status = status;
     if (assignedWorkerId !== undefined) updateFields.assignedWorkerId = assignedWorkerId;
@@ -81,7 +88,21 @@ export async function PATCH(
       .where(eq(appointments.id, numericId))
       .returning();
 
-    return NextResponse.json({ success: true, appointment: updated[0] });
+    const updatedAppt = updated[0];
+
+    // WhatsApp notification to customer when job is completed
+    if (status === "Completed" && updatedAppt.customerPhone) {
+      try {
+        await sendWhatsAppMessage(
+          updatedAppt.customerPhone,
+          `✅ Your Tekton booking TEK-${numericId} (${updatedAppt.category}) has been completed by ${worker.name}. Thank you for choosing Tekton Bhopal! Please rate your experience. Team Tekton.`
+        );
+      } catch (e) {
+        console.warn("WhatsApp notification failed:", e);
+      }
+    }
+
+    return NextResponse.json({ success: true, appointment: updatedAppt });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Server error";
     console.error("[PARTNER UPDATE ERROR]", error);

@@ -19,7 +19,8 @@ const CATEGORIES = [
   "Washing Machine & Fridge",
   "CCTV Cameras",
   "Pest Control",
-  "Car Wash"
+  "Car Wash",
+  "General Helper"
 ];
 
 export default function PartnerJoinPage() {

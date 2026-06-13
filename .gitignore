@@ -51,3 +51,4 @@ debug_run.bat
 git_push_output.log
 
 .vercel
+.env*.local
