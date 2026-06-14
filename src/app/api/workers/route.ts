@@ -110,19 +110,25 @@ export async function POST(request: Request) {
     
     const finalAvatarUrl = defaultAvatars[serviceCategory] || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80";
 
+    const isApprovedVal = body.isApproved !== undefined ? Boolean(body.isApproved) : false;
+    const isVerifiedVal = body.isVerified !== undefined ? Boolean(body.isVerified) : false;
+    const kycStatusVal = body.kycStatus !== undefined ? Boolean(body.kycStatus) : false;
+    const statusVal = body.status || "Pending";
+
     const dbWorkerValues = {
       name: fullName,
       phone: whatsappNumber,
       category: serviceCategory,
       experienceYears: Number(experienceYears) || 2,
-      basePrice: body.basePrice || 49,
+      basePrice: Number(body.basePrice) || 49,
       locations: preferredZone.toLowerCase().includes("bhopal") ? preferredZone : `${preferredZone}, Bhopal`,
       bio: body.bio || `Professional ${serviceCategory} serving ${preferredZone} zone in Bhopal.`,
-      rating: "4.9",
-      reviewsCount: 0,
-      isVerified: false,
-      status: "Pending",
-      isApproved: false,
+      rating: body.rating || "4.9",
+      reviewsCount: Number(body.reviewsCount) || 0,
+      isVerified: isVerifiedVal,
+      status: statusVal,
+      isApproved: isApprovedVal,
+      kycStatus: kycStatusVal,
       aadhaarUrl: aadharNumber || "",
       panUrl: panUrl || "",
       passbookUrl: passbookUrl || "",
@@ -136,43 +142,6 @@ export async function POST(request: Request) {
     } catch (dbError: any) {
       console.error("[DATABASE ERROR] Standard DB insert failed in workers:", dbError);
       throw new Error(`Database insert failed: ${dbError.message}`);
-    }
-
-    // 2. Format strictly wrapped in a "data" object array for SheetDB API Sheet2
-    const payload = {
-      data: [
-        {
-          workerId,
-          fullName,
-          whatsappNumber,
-          serviceCategory,
-          preferredZone,
-          experienceYears: Number(experienceYears) || 0,
-          aadharNumber,
-          profilePhoto: "pending",
-          status,
-          applicationDate,
-        },
-      ],
-    };
-
-    // 3. Post to SheetDB
-    try {
-      const response = await fetch(sheetDbUrl, {
-        method: "POST",
-        headers: {
-          "Accept": "application/json",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`SheetDB API returned error: ${errorText}`);
-      }
-    } catch (sheetdbError: any) {
-      console.warn("[DATABASE FAILOVER] SheetDB write to Sheet2 failed. Gracefully falling back since local database write succeeded.", sheetdbError);
     }
 
     return NextResponse.json(

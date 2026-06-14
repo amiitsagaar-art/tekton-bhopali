@@ -212,6 +212,19 @@ export default function AdminControlPanel() {
   const [isCashPaymentEnabled, setIsCashPaymentEnabled] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
 
+  // Add New Partner State
+  const [isAddingWorker, setIsAddingWorker] = useState(false);
+  const [newWorker, setNewWorker] = useState({
+    name: "",
+    phone: "",
+    category: "Plumber",
+    experienceYears: "2",
+    basePrice: "149",
+    locations: "MP Nagar",
+    bio: "",
+  });
+  const [isCreatingWorker, setIsCreatingWorker] = useState(false);
+
   // Helper to mask Aadhaar numbers
   const maskAadhar = (aadhar?: string) => {
     if (!aadhar) return "[Aadhaar Redacted]"
@@ -521,6 +534,62 @@ export default function AdminControlPanel() {
       }
     } catch (e) { console.error(e); }
     finally { setIsAddingCoupon(false); }
+  };
+
+  // ─── Add a new worker/partner ─────────────────────────────────
+  const handleAddWorker = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newWorker.name.trim()) { alert("Please enter worker name."); return; }
+    if (!newWorker.phone.trim() || newWorker.phone.trim().length < 10) { alert("Please enter a valid 10-digit phone number."); return; }
+    if (!newWorker.locations.trim()) { alert("Please enter locations."); return; }
+
+    setIsCreatingWorker(true);
+    try {
+      const res = await fetch("/api/workers", {
+        method: "POST",
+        headers: adminHeaders,
+        body: JSON.stringify({
+          fullName: newWorker.name.trim(),
+          whatsappNumber: newWorker.phone.trim(),
+          serviceCategory: newWorker.category,
+          preferredZone: newWorker.locations.trim(),
+          experienceYears: newWorker.experienceYears,
+          basePrice: newWorker.basePrice,
+          bio: newWorker.bio.trim(),
+          isApproved: true, // Auto-approve since admin is creating them
+          status: "Approved",
+          kycStatus: true, // Auto-verify KYC
+          isVerified: true,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        alert("🎉 Partner Created Successfully!");
+        // Refresh workers list
+        const freshRes = await fetch("/api/workers?all=true", { headers: adminHeaders });
+        const freshData = freshRes.ok ? await freshRes.json() : [];
+        setWorkers(freshData);
+        // Reset form
+        setNewWorker({
+          name: "",
+          phone: "",
+          category: "Plumber",
+          experienceYears: "2",
+          basePrice: "149",
+          locations: "MP Nagar",
+          bio: "",
+        });
+        setIsAddingWorker(false);
+      } else {
+        alert(data.error || "Failed to create partner");
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert("Error creating partner: " + err.message);
+    } finally {
+      setIsCreatingWorker(false);
+    }
   };
 
   // ─── Toggle coupon active ─────────────────────────────────────
@@ -898,7 +967,121 @@ export default function AdminControlPanel() {
               </table>
             </div>
           ) : activeTab === "workers" ? (
-            <div className="overflow-x-auto">
+            <div className="p-6 space-y-6">
+              
+              {/* Add Partner Form Trigger & Form Container */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-white">Bhopal Skilled Partners</h3>
+                  <p className="text-xs text-slate-400">Add manual professionals and manage applications.</p>
+                </div>
+                <button
+                  onClick={() => setIsAddingWorker(!isAddingWorker)}
+                  className="bg-yellow-400 hover:bg-yellow-300 text-slate-950 px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-1.5"
+                >
+                  <Plus className="w-4 h-4" />
+                  {isAddingWorker ? "Cancel" : "Add Partner"}
+                </button>
+              </div>
+
+              {isAddingWorker && (
+                <form onSubmit={handleAddWorker} className="bg-slate-950 border border-slate-800 rounded-2xl p-5 space-y-4">
+                  <h4 className="text-sm font-black text-white flex items-center gap-1.5">
+                    <Plus className="w-4 h-4 text-yellow-400" />
+                    Register New Skilled Partner
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase">Partner Name *</label>
+                      <input
+                        required
+                        type="text"
+                        placeholder="e.g. Ramesh Sharma"
+                        value={newWorker.name}
+                        onChange={e => setNewWorker({ ...newWorker, name: e.target.value })}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-yellow-400 transition"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase">WhatsApp Number *</label>
+                      <input
+                        required
+                        type="text"
+                        placeholder="10-digit phone number"
+                        value={newWorker.phone}
+                        onChange={e => setNewWorker({ ...newWorker, phone: e.target.value })}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-yellow-400 transition"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase">Service Category *</label>
+                      <select
+                        value={newWorker.category}
+                        onChange={e => setNewWorker({ ...newWorker, category: e.target.value })}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-yellow-400 transition cursor-pointer"
+                      >
+                        <option value="Plumber">Plumber</option>
+                        <option value="Carpenter">Carpenter</option>
+                        <option value="Electrician">Electrician</option>
+                        <option value="Painter">Painter</option>
+                        <option value="Cleaner">Cleaner</option>
+                        <option value="General Helper">General Helper</option>
+                        <option value="Tank Cleaning">Tank Cleaning</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase">Experience (Years)</label>
+                      <input
+                        type="number"
+                        placeholder="2"
+                        value={newWorker.experienceYears}
+                        onChange={e => setNewWorker({ ...newWorker, experienceYears: e.target.value })}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-yellow-400 transition"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase">Base Price (₹)</label>
+                      <input
+                        type="number"
+                        placeholder="149"
+                        value={newWorker.basePrice}
+                        onChange={e => setNewWorker({ ...newWorker, basePrice: e.target.value })}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-yellow-400 transition"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase">Bhopal Hub Location / Zone *</label>
+                      <input
+                        required
+                        type="text"
+                        placeholder="e.g. MP Nagar, Kolar"
+                        value={newWorker.locations}
+                        onChange={e => setNewWorker({ ...newWorker, locations: e.target.value })}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-yellow-400 transition"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase">Professional Bio / Specialty (Optional)</label>
+                    <textarea
+                      rows={2}
+                      placeholder="Specializes in pipe leakages, tank repairs..."
+                      value={newWorker.bio}
+                      onChange={e => setNewWorker({ ...newWorker, bio: e.target.value })}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-yellow-400 transition resize-none"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={isCreatingWorker}
+                    className="bg-yellow-400 hover:bg-yellow-300 text-slate-950 px-5 py-2.5 rounded-xl text-xs font-black transition inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isCreatingWorker ? "Creating..." : "Create Partner"}
+                  </button>
+                </form>
+              )}
+
+              <div className="overflow-x-auto border border-slate-800 rounded-xl bg-slate-900/40">
               <table className="w-full text-left text-sm whitespace-nowrap">
                 <thead className="bg-slate-950/50 text-slate-400 font-bold uppercase text-xs border-b border-slate-800">
                   <tr>
@@ -1006,7 +1189,8 @@ export default function AdminControlPanel() {
                 </tbody>
               </table>
             </div>
-          ) : activeTab === "reviews" ? (
+          </div>
+        ) : activeTab === "reviews" ? (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm whitespace-nowrap">
                 <thead className="bg-slate-950/50 text-slate-400 font-bold uppercase text-xs border-b border-slate-800">
