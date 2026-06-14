@@ -20,6 +20,7 @@ export const workers = pgTable("workers", {
   panUrl: text("pan_url"),
   passbookUrl: text("passbook_url"),
   selfieUrl: text("selfie_url"),
+  pushToken: text("push_token"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -51,6 +52,7 @@ export const users = pgTable("users", {
   email: varchar("email", { length: 255 }).notNull().unique(),
   location: varchar("location", { length: 100 }).notNull(),
   photoUrl: varchar("photo_url", { length: 1000 }),
+  pushToken: text("push_token"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

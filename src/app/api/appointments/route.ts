@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { sendWhatsAppMessage } from "@/utils/whatsapp";
 import { db } from "@/db";
-import { appointments } from "@/db/schema";
+import { appointments, workers } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { verifyAdminToken } from "@/lib/adminAuth";
 import { SITE_CONFIG } from "@/config/site";
+import { sendPushNotification } from "@/lib/firebaseAdmin";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -96,6 +97,27 @@ export async function POST(request: Request) {
         adminPhone,
         `New Paid Booking Confirmed!\nCustomer: ${customerName}\nPhone: ${phoneNumber}\nService: ${serviceCategory}\nVisit Charge: ₹${totalPrice}\nTxn ID: ${transactionId}\nBooking ID: ${dbBookingId}`
       );
+    }
+
+    // 4. Send Push Notification to assigned worker (if assigned)
+    if (assignedWorkerId) {
+      try {
+        const workerRes = await db
+          .select()
+          .from(workers)
+          .where(eq(workers.id, Number(assignedWorkerId)))
+          .limit(1);
+
+        if (workerRes[0] && workerRes[0].pushToken) {
+          await sendPushNotification(
+            workerRes[0].pushToken,
+            "New Task Assigned! 🛠️",
+            `Hello ${workerRes[0].name}, a new ${serviceCategory} task has been assigned to you.`
+          );
+        }
+      } catch (pushError) {
+        console.warn("Failed to send assignment push notification:", pushError);
+      }
     }
 
     return NextResponse.json(

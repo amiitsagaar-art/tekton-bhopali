@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { appointments, workers } from "@/db/schema";
+import { appointments, workers, users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { sendWhatsAppMessage } from "@/utils/whatsapp";
 import { verifyAdminToken } from "@/lib/adminAuth";
+import { sendPushNotification } from "@/lib/firebaseAdmin";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!verifyAdminToken(request)) {
@@ -55,6 +56,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           worker[0].phone,
           `Hello ${worker[0].name}, a new ${updatedApp.category} task has been assigned to you at ${updatedApp.location}. Please open your Partner Dashboard to Accept or Decline the task. Team Tekton.`
         );
+        if (worker[0].pushToken) {
+          await sendPushNotification(
+            worker[0].pushToken,
+            "New Task Assigned! 🛠️",
+            `Hello ${worker[0].name}, a new ${updatedApp.category} task has been assigned to you at ${updatedApp.location}.`
+          );
+        }
       }
     }
 
@@ -66,6 +74,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           updatedApp.customerPhone,
           `Your Tekton booking ${updatedApp.id} has been cancelled successfully.`
         );
+        try {
+          const customer = await db.select().from(users).where(eq(users.phone, updatedApp.customerPhone)).limit(1);
+          if (customer[0] && customer[0].pushToken) {
+            await sendPushNotification(
+              customer[0].pushToken,
+              "Booking Cancelled ❌",
+              `Your Tekton booking TEK-${updatedApp.id} has been cancelled successfully.`
+            );
+          }
+        } catch (pushErr) {
+          console.warn("Failed to send customer cancel push:", pushErr);
+        }
       }
       // Notify assigned worker if any
       if (updatedApp.assignedWorkerId) {
@@ -75,6 +95,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             worker[0].phone,
             `Alert: The task ${updatedApp.id} assigned to you has been cancelled by the user.`
           );
+          if (worker[0].pushToken) {
+            await sendPushNotification(
+              worker[0].pushToken,
+              "Task Cancelled ❌",
+              `Alert: The task TEK-${updatedApp.id} assigned to you has been cancelled by the user.`
+            );
+          }
         }
       }
     }
