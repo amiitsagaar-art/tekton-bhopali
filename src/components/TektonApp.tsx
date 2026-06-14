@@ -1019,7 +1019,6 @@ export default function TektonApp() {
     };
 
     initializeData();
-    fetchAppointments();
     loadReviews();
 
     const savedPhone = localStorage.getItem("tektonUserPhone");
@@ -1070,6 +1069,11 @@ export default function TektonApp() {
         .catch(err => console.error("Could not resolve user ID on mount:", err));
     }
   }, []);
+
+  // Keep bookings in sync reactively when userPhone or isLoggedIn status changes
+  useEffect(() => {
+    fetchAppointments();
+  }, [userPhone, isLoggedIn]);
 
   // Auto trigger booking modal from URL query parameters (?service=<Name> or ?book=true)
   useEffect(() => {
@@ -1139,12 +1143,22 @@ export default function TektonApp() {
   };
 
   const fetchAppointments = async () => {
+    const savedPhone = typeof window !== "undefined" ? localStorage.getItem("tektonUserPhone") : null;
+    const phoneToQuery = savedPhone || userPhone;
+
+    if (!phoneToQuery) {
+      setAppointments([]);
+      return;
+    }
+
     try {
-      const res = await fetch("/api/appointments");
+      // Regular customers query /api/bookings?phone=...
+      const res = await fetch(`/api/bookings?phone=${encodeURIComponent(phoneToQuery)}`);
       const data = await res.json();
       setAppointments(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Failed fetching appointments:", err);
+      setAppointments([]);
     }
   };
 
